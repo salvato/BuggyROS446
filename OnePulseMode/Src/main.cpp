@@ -64,7 +64,7 @@ MX_TIM3_Init(void) {
 
     uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/timerClockFrequency)-1;
     uint16_t PulseWidthNumber = pulsewidth*timerClockFrequency;
-    uint16_t PulseDelayNumber = pulseDelay*timerClockFrequency;
+    uint16_t PulseDelayNumber = 1;//pulseDelay*timerClockFrequency;
     uint16_t period = PulseWidthNumber+PulseDelayNumber;
 
     __HAL_RCC_TIM3_CLK_ENABLE();
@@ -82,7 +82,7 @@ MX_TIM3_Init(void) {
     TIM_OnePulse_InitTypeDef sConfig;
     memset(&sConfig, 0, sizeof(sConfig));
     sConfig.OCMode       = TIM_OCMODE_PWM2;
-    sConfig.Pulse        = 1;//PulseDelayNumber; // Non minore di 1 !!!
+    sConfig.Pulse        = 1; // Delay NON Minore di 1 !!!
     sConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
     sConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
     sConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
@@ -102,7 +102,6 @@ MX_TIM3_Init(void) {
     if(HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
         Error_Handler();
     }
-
 }
 
 
