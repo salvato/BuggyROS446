@@ -11,9 +11,9 @@ static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 
-double timerClockFrequency = 1.0e7;  // 10 MHz
-double pulseDelay          = 1.0e-6; // in seconds
-double pulsewidth          = 1.0e-6; // in seconds
+double timerClockFrequency = 1.0e7;   // 10 MHz
+double pulseDelay          = 1.0e-6;  // in seconds
+double pulsewidth          = 10.0e-6; // in seconds
 
 
 int
