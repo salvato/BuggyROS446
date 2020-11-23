@@ -11,7 +11,7 @@ static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 
-double timerClockFrequency = 1.0e7;   // 10 MHz
+double timerClockFrequency = 10.0e6;  // 10 MHz (100ns period)
 double pulseDelay          = 1.0e-6;  // in seconds
 double pulsewidth          = 10.0e-6; // in seconds
 
@@ -81,9 +81,8 @@ MX_TIM3_Init(void) {
 
     TIM_OnePulse_InitTypeDef sConfig;
     memset(&sConfig, 0, sizeof(sConfig));
-    //sConfig.OCMode       = TIM_OCMODE_TIMING;
     sConfig.OCMode       = TIM_OCMODE_PWM2;
-    sConfig.Pulse        = PulseDelayNumber;
+    sConfig.Pulse        = 1;//PulseDelayNumber; // Non minore di 1 !!!
     sConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
     sConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
     sConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
@@ -94,14 +93,6 @@ MX_TIM3_Init(void) {
     if(HAL_TIM_OnePulse_ConfigChannel(&htim3, &sConfig, TIM_CHANNEL_1, TIM_CHANNEL_2) != HAL_OK) {
       Error_Handler();
     }
-/*
-    // Clock Source is internal
-    TIM_ClockConfigTypeDef  sClockSourceConfig;
-    memset(&sClockSourceConfig, 0, sizeof(sClockSourceConfig));
-    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-    if(HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK) {
-        Error_Handler();
-    }
 
     // No Master-Slave Mode
     TIM_MasterConfigTypeDef sMasterConfig;
@@ -111,7 +102,7 @@ MX_TIM3_Init(void) {
     if(HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
         Error_Handler();
     }
-*/
+
 }
 
 
