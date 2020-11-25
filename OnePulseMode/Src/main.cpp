@@ -1,6 +1,8 @@
 #include "main.h"
 #include "string.h" // for memset()
-
+#include "stm32f4xx_ll_tim.h"
+#include "stm32f4xx_ll_gpio.h"
+#include "stm32f4xx_ll_bus.h"
 
 TIM_HandleTypeDef  htim3;
 UART_HandleTypeDef huart2;
@@ -10,10 +12,16 @@ static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
+static void TimerCaptureCompare_Callback(void);
 
-double timerClockFrequency = 10.0e6;  // 10 MHz (100ns period)
-double pulseDelay          = 1.0e-6;  // in seconds
-double pulsewidth          = 10.0e-6; // in seconds
+double timerClockFrequency = 10.0e6; // 10 MHz (100ns period)
+double pulseDelay          = 10.0e-6; // in seconds
+double pulsewidth          = 10.0e-6;// in seconds
+
+/* Measured pulse delay (in us) */
+__IO uint32_t uwMeasuredDelay = 0;
+/* Measured pulse length (in us) */
+__IO uint32_t uwMeasuredPulseLength = 0;
 
 
 int
@@ -21,27 +29,22 @@ main(void) {
     HAL_Init();
     SystemClock_Config();
 
-    MX_GPIO_Init(); // led on PA5 - CN10 --> Pin11
+    MX_GPIO_Init(); // Led on PA5 - CN10 --> Pin11
     MX_TIM3_Init();
     MX_USART2_UART_Init();
 
-    HAL_Delay(3000);
-    if(HAL_TIM_OnePulse_Start(&htim3, TIM_CHANNEL_1) != HAL_OK) {
-      Error_Handler();
-    }
+    HAL_Delay(1000);
     while(1) {
         HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-        HAL_Delay(1);
+        /* Enable counter. Note that the counter will stop automatically at the     */
+        /* next update event (UEV).                                                 */
+        LL_TIM_EnableCounter(TIM3);
+        HAL_Delay(100);
         HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-        HAL_Delay(10);
     }
 }
 
 
-//                              ____
-//                              |   |
-// CH2 _________________________|   |_________________________________________
-//
 //                                            ___________________________
 //                                           |                           |
 // CH1 ______________________________________|                           |____
@@ -49,25 +52,36 @@ main(void) {
 //
 void
 MX_TIM3_Init(void) {
+    //************************+
+    // GPIO AF configuration  |
+    //************************+
     GPIO_InitTypeDef GPIO_InitStruct;
     memset(&GPIO_InitStruct, 0, sizeof(GPIO_InitStruct));
+
     __HAL_RCC_GPIOA_CLK_ENABLE();
     // TIM3 GPIO Configuration
     //    PA6 ------> TIM3_CH1 (Output CN10 - 13)
     //    PA7 ------> TIM3_CH2 (Input  CN10 - 15)
-    GPIO_InitStruct.Pin       = GPIO_PIN_6|GPIO_PIN_7;
-    GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pin       = GPIO_PIN_6 | GPIO_PIN_7;
     GPIO_InitStruct.Pull      = GPIO_PULLUP;
     GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+    //**********************************************+
+    // Configure the NVIC to handle TIM3 interrupt  |
+    //**********************************************+
+    NVIC_SetPriority(TIM3_IRQn, 0);
+    NVIC_EnableIRQ(TIM3_IRQn);
+
     uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/timerClockFrequency)-1;
     uint16_t PulseWidthNumber = pulsewidth*timerClockFrequency;
-    uint16_t PulseDelayNumber = 1;//pulseDelay*timerClockFrequency;
+    uint16_t PulseDelayNumber = pulseDelay*timerClockFrequency;
     uint16_t period = PulseWidthNumber+PulseDelayNumber;
 
-    __HAL_RCC_TIM3_CLK_ENABLE();
+    __HAL_RCC_TIM3_CLK_ENABLE(); // Deve precedere la programmazione dei PIN !!!!
+
     memset(&htim3, 0, sizeof(htim3));
     htim3.Instance = TIM3;
     htim3.Init.Prescaler         = uwPrescalerValue;
@@ -79,29 +93,23 @@ MX_TIM3_Init(void) {
         Error_Handler();
     }
 
-    TIM_OnePulse_InitTypeDef sConfig;
-    memset(&sConfig, 0, sizeof(sConfig));
-    sConfig.OCMode       = TIM_OCMODE_PWM2;
-    sConfig.Pulse        = 1; // Delay NON Minore di 1 !!!
-    sConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    sConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
-    sConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
-    sConfig.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-    sConfig.ICPolarity   = TIM_ICPOLARITY_RISING;
-    sConfig.ICSelection  = TIM_ICSELECTION_DIRECTTI;
-    sConfig.ICFilter     = 0;
-    if(HAL_TIM_OnePulse_ConfigChannel(&htim3, &sConfig, TIM_CHANNEL_1, TIM_CHANNEL_2) != HAL_OK) {
-      Error_Handler();
-    }
+    LL_TIM_OC_SetCompareCH1(TIM3, PulseDelayNumber);
+    LL_TIM_OC_SetMode(TIM3,  LL_TIM_CHANNEL_CH1,  LL_TIM_OCMODE_PWM2);
+    LL_TIM_OC_ConfigOutput(TIM3, LL_TIM_CHANNEL_CH1, LL_TIM_OCPOLARITY_HIGH | LL_TIM_OCIDLESTATE_LOW);
 
-    // No Master-Slave Mode
-    TIM_MasterConfigTypeDef sMasterConfig;
-    memset(&sMasterConfig, 0, sizeof(sMasterConfig));
-    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-    if(HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
-        Error_Handler();
-    }
+    // Enable the capture/compare interrupt for channel 1
+    LL_TIM_EnableIT_CC1(TIM3);
+
+    //*************************+
+    // Start pulse generation  |
+    //*************************+
+    LL_TIM_CC_EnableChannel(TIM3, LL_TIM_CHANNEL_CH1);
+    /* Enable TIM3 outputs */
+    LL_TIM_EnableAllOutputs(TIM3);
+    /* Enable auto-reload register preload */
+    LL_TIM_EnableARRPreload(TIM3);
+    /* Force update generation */
+    LL_TIM_GenerateEvent_UPDATE(TIM3);
 }
 
 
@@ -176,6 +184,44 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 }
 
 
+/**
+* @brief  This function handles TIM3 capture/compare interrupt.
+* @param  None
+* @retval None
+*/
+void
+TIM3_IRQHandler(void) {
+    /* Check whether CC1 interrupt is pending */
+    if(LL_TIM_IsActiveFlag_CC1(TIM3) == 1) {
+        /* Clear the update interrupt flag*/
+        LL_TIM_ClearFlag_CC1(TIM3);
+        /* TIM3 capture/compare interrupt processing(function defined in main.c) */
+        TimerCaptureCompare_Callback();
+    }
+}
+
+
+/**
+  * @brief  Timer capture/compare interrupt processing
+  * @note   Calculates the pulse delay and pulse length of the output waveform
+  *         generated by TIM3.
+  * @param  None
+  * @retval None
+  */
+void
+TimerCaptureCompare_Callback(void) {
+    uint32_t CNT;
+    uint32_t PSC;
+    uint32_t ARR;
+
+    CNT = LL_TIM_GetCounter(TIM3);
+    PSC = LL_TIM_GetPrescaler(TIM3);
+    ARR = LL_TIM_GetAutoReload(TIM3);
+
+    uwMeasuredDelay = (CNT*timerClockFrequency)/(SystemCoreClock/(PSC+1));
+    uwMeasuredPulseLength = ((ARR-CNT)*timerClockFrequency)/(SystemCoreClock/(PSC+1));
+}
+
 
 // System Clock Configuration
 //    The system Clock is configured as follow :
@@ -217,9 +263,9 @@ SystemClock_Config(void) {
     }
 
     RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK   |
-                                       RCC_CLOCKTYPE_SYSCLK |
-                                       RCC_CLOCKTYPE_PCLK1  |
-                                       RCC_CLOCKTYPE_PCLK2;
+            RCC_CLOCKTYPE_SYSCLK |
+            RCC_CLOCKTYPE_PCLK1  |
+            RCC_CLOCKTYPE_PCLK2;
     RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
     RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
