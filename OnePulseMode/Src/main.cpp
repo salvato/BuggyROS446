@@ -61,8 +61,7 @@ MX_TIM3_Init(void) {
     __HAL_RCC_GPIOA_CLK_ENABLE();
     // TIM3 GPIO Configuration
     //    PA6 ------> TIM3_CH1 (Output CN10 - 13)
-    //    PA7 ------> TIM3_CH2 (Input  CN10 - 15)
-    GPIO_InitStruct.Pin       = GPIO_PIN_6 | GPIO_PIN_7;
+    GPIO_InitStruct.Pin       = GPIO_PIN_6;
     GPIO_InitStruct.Pull      = GPIO_PULLUP;
     GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
@@ -73,7 +72,7 @@ MX_TIM3_Init(void) {
     // Configure the NVIC to handle TIM3 interrupt  |
     //**********************************************+
     NVIC_SetPriority(TIM3_IRQn, 0);
-    NVIC_EnableIRQ(TIM3_IRQn);
+    NVIC_EnableIRQ(TIM3_IRQn); // The Global Interrupt
 
     uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/timerClockFrequency)-1;
     uint16_t PulseWidthNumber = pulsewidth*timerClockFrequency;
