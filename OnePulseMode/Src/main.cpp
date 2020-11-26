@@ -104,12 +104,10 @@ MX_TIMER_Init(void) {
     // Start pulse generation  |
     //*************************+
     LL_TIM_CC_EnableChannel(TIM2, LL_TIM_CHANNEL_CH1);
-    /* Enable TIM3 outputs */
     LL_TIM_EnableAllOutputs(TIM2);
-    /* Enable auto-reload register preload */
     LL_TIM_EnableARRPreload(TIM2);
-    /* Force update generation */
-    LL_TIM_GenerateEvent_UPDATE(TIM2);
+    LL_TIM_GenerateEvent_UPDATE(TIM2); // Force update generation
+
 }
 
 
