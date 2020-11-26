@@ -88,7 +88,7 @@ MX_TIMER_Init(void) {
     htimer.Init.CounterMode       = TIM_COUNTERMODE_UP;
     htimer.Init.Period            = period; // Pulse Total
     htimer.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
-    htimer.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    htimer.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
     if(HAL_TIM_OnePulse_Init(&htimer, TIM_OPMODE_SINGLE) != HAL_OK) {
         Error_Handler();
     }
@@ -105,9 +105,7 @@ MX_TIMER_Init(void) {
     //*************************+
     LL_TIM_CC_EnableChannel(TIM2, LL_TIM_CHANNEL_CH1);
     LL_TIM_EnableAllOutputs(TIM2);
-    LL_TIM_EnableARRPreload(TIM2);
     LL_TIM_GenerateEvent_UPDATE(TIM2); // Force update generation
-
 }
 
 
