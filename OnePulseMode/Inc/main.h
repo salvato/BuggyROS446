@@ -7,7 +7,7 @@ extern "C" {
 #include "stm32f4xx_hal.h"
 
 void Error_Handler(void);
-void TIM3_IRQHandler(void);
+void TIM2_IRQHandler(void);
 // Onboard Push Button
 #define B1_Pin       GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
