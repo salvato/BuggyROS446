@@ -53,15 +53,10 @@ main(void) {
 //
 void
 MX_TIMER_Init(void) {
-    //************************+
-    // GPIO AF configuration  |
-    //************************+
     GPIO_InitTypeDef GPIO_InitStruct;
     memset(&GPIO_InitStruct, 0, sizeof(GPIO_InitStruct));
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
-    // TIM3 GPIO Configuration
-    //    PA6 ------> TIM3_CH1 (Output CN10 - 13)
 
     // TIM2 GPIO Configuration
     //    PA0  ------> TIM2_CH1 (Output CN7  - 28)
@@ -190,11 +185,8 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 void
 TIM2_IRQHandler(void) {
-    /* Check whether CC1 interrupt is pending */
     if(LL_TIM_IsActiveFlag_CC1(TIM2) == 1) {
-        /* Clear the update interrupt flag*/
         LL_TIM_ClearFlag_CC1(TIM2);
-        /* TIM2 capture/compare interrupt processing(function defined in main.c) */
         TimerCaptureCompare_Callback();
     }
 }
