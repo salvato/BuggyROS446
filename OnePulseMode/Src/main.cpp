@@ -1,8 +1,7 @@
 #include "main.h"
 #include "string.h" // for memset()
 #include "stm32f4xx_ll_tim.h"
-#include "stm32f4xx_ll_gpio.h"
-#include "stm32f4xx_ll_bus.h"
+
 
 TIM_HandleTypeDef  htim3;
 UART_HandleTypeDef huart2;
