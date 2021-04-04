@@ -274,18 +274,18 @@ double odom_pose[3]  = {0.0};
 ///===================
 /// Update Intervals
 ///===================
-uint32_t IMUSamplingFrequency    = 2;//400; // [Hz]
+uint32_t IMUSamplingFrequency    = 400; // [Hz]
 uint32_t IMUSamplingPulses       = uint32_t(periodicClockFrequency/IMUSamplingFrequency +0.5); // [Hz]
-uint32_t motorSamplingFrequency  = 2;//100;  // [Hz]
+uint32_t motorSamplingFrequency  = 100;  // [Hz]
 uint32_t motorSamplingPulses     = uint32_t(periodicClockFrequency/motorSamplingFrequency+0.5); // [Hz]
-uint32_t odometryUpdateFrequency = 2;//15;  // [Hz]
+uint32_t odometryUpdateFrequency = 15;  // [Hz]
 uint32_t odometrySamplingPulses  = uint32_t(periodicClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
 
-uint32_t dataSendingFrequency    = 2;//4*15;// [Hz]
+uint32_t dataSendingFrequency    = 4*15;// [Hz]
 uint32_t dataSendingPulses       = uint32_t(sendingClockFrequency/dataSendingFrequency +0.5); // [Hz]
-uint32_t sonarSamplingFrequency  = 2;//15;  // [Hz] (Max 40Hz)
+uint32_t sonarSamplingFrequency  = 15;  // [Hz] (Max 40Hz)
 uint32_t sonarSamplingPulses     = uint32_t(sendingClockFrequency/sonarSamplingFrequency+0.5);
-uint32_t mpuSamplingFrequency    = 2;//400;  // [Hz]
+uint32_t mpuSamplingFrequency    = 400;  // [Hz]
 uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/mpuSamplingFrequency+0.5);
 
 bool isIMUpresent     = false;
@@ -365,10 +365,10 @@ static void
 Loop() {
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
     /// Wait until Serial Node is Up and Ready
-//    while(!nh.connected()) {
-//        nh.spinOnce();
-//        HAL_Delay(10);
-//    }
+    while(!nh.connected()) {
+        nh.spinOnce();
+        HAL_Delay(10);
+    }
 
     /// Now Serial Node is Up and Ready
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
@@ -395,8 +395,7 @@ Loop() {
     HAL_TIM_OC_Start_IT(&hSendingTimer, SONAR_CHANNEL);
     HAL_TIM_OC_Start_IT(&hSendingTimer, MPU_CHANNEL);
 
-//    while(nh.connected()) {
-    while(true) {
+    while(nh.connected()) {
         if(bSendNewData) {
             bSendNewData = false;
             nn += 1;
@@ -404,7 +403,7 @@ Loop() {
             HAL_NVIC_DisableIRQ(SENDING_IRQ);
             if(nn == 1) {
                 odom_pub.publish(&odom);
-                //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+                HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             }
             else if(nn == 2) {
                 if(isIMUpresent) {
@@ -426,10 +425,10 @@ Loop() {
             HAL_NVIC_EnableIRQ(SENDING_IRQ);
             /// If No New Speed Data have been Received in the Right Time
             /// Halt the Robot to avoid possible damages
-//            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
-//                leftTargetSpeed  = 0.0; // in m/s
-//                rightTargetSpeed = 0.0; // in m/s
-//            }
+            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
+                leftTargetSpeed  = 0.0; // in m/s
+                rightTargetSpeed = 0.0; // in m/s
+            }
         }
 #if defined(USE_SONAR)
         if(isTimeToUpdateSonar) {
@@ -946,7 +945,7 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 #endif
         }
         else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR3 += mpuSamplingPulses;
             if(isMPU6050present) {
                 mpu6050.Read_All(&hi2c2, &mpuData);

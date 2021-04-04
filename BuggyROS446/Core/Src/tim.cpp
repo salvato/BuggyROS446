@@ -397,8 +397,8 @@ SonarPulseTimerInit(void) {
 // Sending Timer Periodic Interrupt (TIM8 Advanced Timer No GPIO needed)
 void
 SendingTimerInit(uint32_t dataSendingPeriod,
-                 uint32_t sonarSamplingPulses,
-                 uint32_t mpuSamplingPulses)
+                 uint32_t sonarSamplingPeriod,
+                 uint32_t mpuSamplingPeriod)
 {
 
     __HAL_RCC_TIM8_CLK_ENABLE();
@@ -457,17 +457,17 @@ SendingTimerInit(uint32_t dataSendingPeriod,
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
 
-    sConfigOC.Pulse        = dataSendingPeriod;
+    sConfigOC.Pulse = dataSendingPeriod;
     if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, SENDING_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 
-    sConfigOC.Pulse = sonarSamplingPulses;
+    sConfigOC.Pulse = sonarSamplingPeriod;
     if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, SONAR_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 
-    sConfigOC.Pulse = mpuSamplingPulses;
+    sConfigOC.Pulse = mpuSamplingPeriod;
     if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, MPU_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
