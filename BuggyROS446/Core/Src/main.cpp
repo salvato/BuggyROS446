@@ -141,7 +141,7 @@
 #endif
 #define DEG2RAD(x) (x)*M_PI/180.0
 
-//#define USE_SONAR
+#define USE_SONAR
 
 // ========== On TIM2 ==========
 #define MOTOR_UPDATE_CHANNEL    HAL_TIM_ACTIVE_CHANNEL_2
@@ -176,6 +176,7 @@ static void resetOdometry();
 static bool updateOdometry();
 static void calibrateIMU();
 static void updateIMU();
+static void updateMPU();
 static void calculateVariance(float* data, double* var, int nData);
 
 
@@ -291,7 +292,6 @@ uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/mpuSamplingFre
 bool isIMUpresent     = false;
 bool isMPU6050present = false;
 
-bool isTimeToUpdateSonar    = false;
 bool isTimeToUpdateOdometry = false;
 volatile bool bSendNewData  = false;
 
@@ -415,6 +415,11 @@ Loop() {
                     mag_pub.publish(&compassData);
                 }
             }
+#if defined(USE_SONAR)
+            else if(nn == 4) {
+                obstacleDistance_pub.publish(&obstacleDistance);
+            }
+#endif
             else {
                 nn = 0;
                 if(isMPU6050present) {
@@ -430,18 +435,6 @@ Loop() {
                 rightTargetSpeed = 0.0; // in m/s
             }
         }
-#if defined(USE_SONAR)
-        if(isTimeToUpdateSonar) {
-            isTimeToUpdateSonar = false;
-            HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
-            obstacleDistance.range = 0.5 * soundSpeed*(double(uwDiffCapture)/sonarClockFrequency); // [m]
-            HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
-            obstacleDistance.header.stamp = nh.now();
-            obstacleDistance.radiation_type = obstacleDistance.ULTRASOUND;
-            obstacleDistance_pub.publish(&obstacleDistance);
-            //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-        }
-#endif
         pLeftControlledMotor->setTargetSpeed(leftTargetSpeed);
         pRightControlledMotor->setTargetSpeed(rightTargetSpeed);
         nh.spinOnce();
@@ -858,6 +851,7 @@ calibrateIMU() {
     delete data;
 }
 
+
 static void
 updateIMU() {
     Acc.get_Gxyz(AccelValues);
@@ -882,6 +876,18 @@ updateIMU() {
     imuData.angular_velocity.y = DEG2RAD(GyroValues[1]);
     imuData.angular_velocity.z = DEG2RAD(GyroValues[2]);
     imuData.header.stamp = nh.now();
+}
+
+
+void
+updateMPU() {
+    mpu6050.Read_All(&hi2c2, &mpuData);
+    imu2Data.linear_acceleration.x = mpuData.Ax*9.80665;
+    imu2Data.linear_acceleration.y = mpuData.Ay*9.80665;
+    imu2Data.linear_acceleration.z = mpuData.Az*9.80665;
+    imu2Data.angular_velocity.x    = mpuData.Gx/180.0*M_PI;
+    imu2Data.angular_velocity.y    = mpuData.Gy/180.0*M_PI;
+    imu2Data.angular_velocity.z    = mpuData.Gz/180.0*M_PI;
 }
 
 
@@ -948,13 +954,7 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR3 += mpuSamplingPulses;
             if(isMPU6050present) {
-                mpu6050.Read_All(&hi2c2, &mpuData);
-                imu2Data.linear_acceleration.x = mpuData.Ax*9.80665;
-                imu2Data.linear_acceleration.y = mpuData.Ay*9.80665;
-                imu2Data.linear_acceleration.z = mpuData.Az*9.80665;
-                imu2Data.angular_velocity.x    = mpuData.Gx/180.0*M_PI;
-                imu2Data.angular_velocity.y    = mpuData.Gy/180.0*M_PI;
-                imu2Data.angular_velocity.z    = mpuData.Gz/180.0*M_PI;
+                updateMPU();
             }
         }
         else
@@ -993,7 +993,9 @@ HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
             uwDiffCapture = ((0xFFFFFFFF - uwIC2Value1) + uwIC2Value2) + 1;
         }
         uhCaptureIndex = 0;
-        isTimeToUpdateSonar = true;
+        obstacleDistance.range = 0.5 * soundSpeed*(double(uwDiffCapture)/sonarClockFrequency); // [m]
+        obstacleDistance.header.stamp = nh.now();
+        obstacleDistance.radiation_type = obstacleDistance.ULTRASOUND;
     }
 }
 #endif
