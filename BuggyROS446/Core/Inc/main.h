@@ -14,6 +14,7 @@ extern "C" {
 
 void TIM2_IRQHandler(void);
 void TIM5_IRQHandler(void);
+void TIM8_CC_IRQHandler(void);
 void EXTI15_10_IRQHandler(void);
 void USART2_DMA_RX_IRQHandler(void);
 void USART2_DMA_TX_IRQHandler(void);

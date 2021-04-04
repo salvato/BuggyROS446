@@ -124,16 +124,16 @@
 #include "MadgwickAHRS.h"
 #include "string.h" // for memset()
 #include "stdio.h"
-// ROS includes
+// =================== ROS includes ===================
 #include <ros.h>
 #include <tf/tf.h>
-#include <geometry_msgs/Twist.h>   // Received Speed Data
-#include <geometry_msgs/Vector3.h> // Received PID Values
-#include <nav_msgs/Odometry.h>     // Published Robot Odometry
-#include <sensor_msgs/Imu.h>       // Published IMU Data
-#include <sensor_msgs/Range.h>     // Published Sonar Data
+#include <geometry_msgs/Twist.h>       // Received Speed Data
+#include <geometry_msgs/Vector3.h>     // Received PID Values
+#include <nav_msgs/Odometry.h>         // Published Robot Odometry
+#include <sensor_msgs/Imu.h>           // Published IMU Data
+#include <sensor_msgs/Range.h>         // Published Sonar Data
 #include <sensor_msgs/MagneticField.h> // Published Compass Data
-#include <std_msgs/UInt8.h>
+#include <std_msgs/UInt8.h>            // Dummy data
 
 
 #ifndef M_PI
@@ -142,21 +142,26 @@
 #define DEG2RAD(x) (x)*M_PI/180.0
 
 //#define USE_SONAR
-#define USE_IMU_MPU6050
 
+// ========== On TIM2 ==========
 #define MOTOR_UPDATE_CHANNEL    HAL_TIM_ACTIVE_CHANNEL_2
-#define MOTOR_CHANNEL           TIM_CHANNEL_2
-
 #define ODOMETRY_UPDATE_CHANNEL HAL_TIM_ACTIVE_CHANNEL_3
-#define ODOMETRY_CHANNEL        TIM_CHANNEL_3
-
-#define SONAR_UPDATE_CHANNEL    ODOMETRY_UPDATE_CHANNEL
-#define SONAR_CHANNEL           ODOMETRY_CHANNEL
-
 #define IMU_UPDATE_CHANNEL      HAL_TIM_ACTIVE_CHANNEL_4
-#define IMU_CHANNEL             TIM_CHANNEL_4
+uint32_t MOTOR_CHANNEL =        TIM_CHANNEL_2;
+uint32_t ODOMETRY_CHANNEL =     TIM_CHANNEL_3;
+uint32_t IMU_CHANNEL =          TIM_CHANNEL_4;
 
+// ========== On TIM8 ==========
+#define SENDING_TIME_CHANNEL    HAL_TIM_ACTIVE_CHANNEL_1
+#define SONAR_UPDATE_CHANNEL    HAL_TIM_ACTIVE_CHANNEL_2
+#define MPU_UPDATE_CHANNEL      HAL_TIM_ACTIVE_CHANNEL_3
+uint32_t SENDING_CHANNEL =      TIM_CHANNEL_1;
+uint32_t SONAR_CHANNEL =        TIM_CHANNEL_2;
+uint32_t MPU_CHANNEL =          TIM_CHANNEL_3;
+
+// Timers IRQ Numbers
 #define SAMPLING_IRQ            TIM2_IRQn
+#define SENDING_IRQ             TIM8_CC_IRQn
 
 
 ///==============================
@@ -220,7 +225,7 @@ static const double TRACK_LENGTH     = 0.209;  // Tire's Distance [m]
 
 unsigned int baudRate = 921600; /// We can try greater speeds...Require changing the value in:
 ///                                 /opt/ros/noetic/lib/rosserial_python/serial_node.py
-
+double sendingClockFrequency  = 10.0e3;// 10KHz
 double periodicClockFrequency = 10.0e6;// 10MHz
 double pwmClockFrequency      = 3.0e4; // 30KHz (corresponding to ~120Hz PWM Period)
 
@@ -272,17 +277,22 @@ uint32_t IMUSamplingFrequency    = 400; // [Hz]
 uint32_t IMUSamplingPulses       = uint32_t(periodicClockFrequency/IMUSamplingFrequency +0.5); // [Hz]
 uint32_t motorSamplingFrequency  = 100;  // [Hz]
 uint32_t motorSamplingPulses     = uint32_t(periodicClockFrequency/motorSamplingFrequency+0.5); // [Hz]
-uint32_t odometryUpdateFrequency = 4*15;  // [Hz]
-uint32_t odometrySamplingPulses  = uint32_t(periodicClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
-uint32_t sonarSamplingFrequency  = odometryUpdateFrequency;  // [Hz] (Max 40Hz)
+uint32_t sonarSamplingFrequency  = 15;  // [Hz] (Max 40Hz)
 uint32_t sonarSamplingPulses     = uint32_t(periodicClockFrequency/sonarSamplingFrequency+0.5);
 
+uint32_t dataSendingFrequency    = 4*15;// [Hz]
+uint32_t dataSendingPulses       = uint32_t(sendingClockFrequency/dataSendingFrequency +0.5); // [Hz]
+uint32_t odometryUpdateFrequency = 4*15;  // [Hz]
+uint32_t odometrySamplingPulses  = uint32_t(sendingClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
+uint32_t mpuSamplingFrequency    = 400;  // [Hz]
+uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/sonarSamplingFrequency+0.5);
 
 bool isIMUpresent     = false;
 bool isMPU6050present = false;
 
 bool isTimeToUpdateSonar    = false;
 bool isTimeToUpdateOdometry = false;
+volatile bool bSendNewData  = false;
 
 /// Captured Values for Sonar Echo Width Calculation
 volatile uint32_t uwIC2Value1    = 0;
@@ -354,10 +364,10 @@ static void
 Loop() {
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
     /// Wait until Serial Node is Up and Ready
-    while(!nh.connected()) {
-        nh.spinOnce();
-        HAL_Delay(10);
-    }
+//    while(!nh.connected()) {
+//        nh.spinOnce();
+//        HAL_Delay(10);
+//    }
 
     /// Now Serial Node is Up and Ready
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
@@ -378,16 +388,19 @@ Loop() {
     HAL_TIM_OC_Start_IT(&hSamplingTimer, IMU_CHANNEL);      // IMU
     HAL_TIM_OC_Start_IT(&hSamplingTimer, MOTOR_CHANNEL);    // Motors
     HAL_TIM_OC_Start_IT(&hSamplingTimer, ODOMETRY_CHANNEL); // Odometry & Sonar
-    // Enable and set Button EXTI Interrupt
-    while(nh.connected()) {
-        if(isTimeToUpdateOdometry) {
-            isTimeToUpdateOdometry = false;
+    HAL_NVIC_EnableIRQ(SENDING_IRQ);
+    HAL_TIM_OC_Start_IT(&hSendingTimer, SENDING_CHANNEL);
+
+//    while(nh.connected()) {
+    while(true) {
+        if(bSendNewData) {
+            bSendNewData = false;
             nn += 1;
             HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
             if(nn == 1) {
-                HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
                 updateOdometry();
                 odom_pub.publish(&odom);
+                HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             }
             else if(nn == 2) {
                 if(isIMUpresent) {
@@ -414,10 +427,10 @@ Loop() {
             HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
             /// If No New Speed Data have been Received in the Right Time
             /// Halt the Robot to avoid possible damages
-            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
-                leftTargetSpeed  = 0.0; // in m/s
-                rightTargetSpeed = 0.0; // in m/s
-            }
+//            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
+//                leftTargetSpeed  = 0.0; // in m/s
+//                rightTargetSpeed = 0.0; // in m/s
+//            }
         }
 #if defined(USE_SONAR)
         if(isTimeToUpdateSonar) {
@@ -436,19 +449,21 @@ Loop() {
         nh.spinOnce();
     } // while(nh.connected())
 
-    /// Serial Node Disconnected
+    // Serial Node Disconnected
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
     leftTargetSpeed  = 0.0; // in m/s
     rightTargetSpeed = 0.0; // in m/s
     pLeftControlledMotor->setTargetSpeed(leftTargetSpeed);
     pRightControlledMotor->setTargetSpeed(rightTargetSpeed);
 
+    // Stop Sending Out New Data:
+    HAL_TIM_OC_Stop_IT(&hSendingTimer, SENDING_CHANNEL);
+    HAL_NVIC_DisableIRQ(SENDING_IRQ);
+
     // Stop the Periodic Sampling:
-    // Start the Periodic Sampling Counters:
     HAL_TIM_OC_Stop_IT(&hSamplingTimer, IMU_CHANNEL);      // IMU
     HAL_TIM_OC_Stop_IT(&hSamplingTimer, MOTOR_CHANNEL);    // Motors
     HAL_TIM_OC_Stop_IT(&hSamplingTimer, ODOMETRY_CHANNEL); // Odometry & Sonar
-    // Enable and set Button EXTI Interrupt
     HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
 }
 ///=======================================================================
@@ -499,6 +514,7 @@ void
 Init_Hardware() {
     HAL_Init();           // Initialize the HAL Library
     SystemClock_Config(); // Initialize System Clock
+    SystemCoreClockUpdate();
     GPIO_Init();          // Initialize On Board Peripherals
     SerialPortInit();     // Initialize the Serial Communication Port (/dev/ttyACM0)
 
@@ -548,8 +564,11 @@ Init_Hardware() {
     SonarPulseTimerInit();
 #endif
 
-    // Initialize Periodic Samplig Timer
+    // Initialize Periodic Sampling Timer
     SamplingTimerInit(IMUSamplingPulses, motorSamplingPulses, odometrySamplingPulses);
+
+    // Initialize Periodic Sending Timer (also used for
+    SendingTimerInit(dataSendingPulses, sonarSamplingPulses, mpuSamplingPulses);
 
     // Enable Push Button Interrupt
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
@@ -603,6 +622,7 @@ IMU_Init() {
         return false;
 
     Madgwick.begin(float(IMUSamplingFrequency));
+
     /// Since we Assume that the Buggy is stationary...
     GyroValues[0] = GyroValues[1] = GyroValues[2] = 0.0;
     //while(!Gyro.isRawDataReadyOn()) {}
@@ -847,6 +867,14 @@ TIM2_IRQHandler(void) {
 }
 
 
+// To handle the TIM8 (Periodic Sender) interrupt.
+void
+TIM8_CC_IRQHandler(void) {
+    // Will call HAL_TIM_OC_DelayElapsedCallback(&hSendingTimer)
+    HAL_TIM_IRQHandler(&hSendingTimer);
+}
+
+
 // To Restart Periodic Timers
 void
 HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
@@ -879,9 +907,9 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
                 compassData.magnetic_field.y = MagValues[1];
                 compassData.magnetic_field.z = MagValues[2];
                 // Convert accel from g to m/sec^2
-                imuData.linear_acceleration.x = AccelValues[0]* 9.80665 ;
-                imuData.linear_acceleration.y = AccelValues[1]* 9.80665 ;
-                imuData.linear_acceleration.z = AccelValues[2]* 9.80665 ;
+                imuData.linear_acceleration.x = AccelValues[0] * 9.80665 ;
+                imuData.linear_acceleration.y = AccelValues[1] * 9.80665 ;
+                imuData.linear_acceleration.z = AccelValues[2] * 9.80665 ;
                 // Convert gyroscope from degrees/sec to radians/sec
                 imuData.angular_velocity.x = DEG2RAD(GyroValues[0]);
                 imuData.angular_velocity.y = DEG2RAD(GyroValues[1]);
@@ -900,6 +928,26 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
             isTimeToUpdateOdometry = true; // We use this Timer to send the updated Odometry
         }
     } // if(htim->Instance == hSamplingTimer.Instance)
+
+    else if(htim->Instance == hSendingTimer.Instance) {
+        if(htim->Channel == SENDING_TIME_CHANNEL) { // Time to Send Out New Data (4*15Hz)
+            htim->Instance->CCR1 += dataSendingPulses;
+            bSendNewData = true;
+        }
+        else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
+            htim->Instance->CCR4 += mpuSamplingPulses;
+            if(isMPU6050present)
+                mpu6050.Read_All(&hi2c2, &mpuData);
+        }
+        else if(htim->Channel == SONAR_UPDATE_CHANNEL) { // Time to Update Odometry
+            htim->Instance->CCR3 += sonarSamplingPulses;
+#if defined(USE_SONAR)
+            uhCaptureIndex = 0;
+            LL_TIM_IC_SetPolarity(TIM5, LL_TIM_CHANNEL_CH2, LL_TIM_IC_POLARITY_RISING);
+            LL_TIM_EnableCounter(hSonarPulseTimer.Instance);
+#endif
+        }
+    } // if(htim->Instance == hSendingTimer.Instance)
 }
 
 

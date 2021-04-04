@@ -9,11 +9,14 @@ extern "C" {
 void LeftEncoderTimerInit(void);
 void SamplingTimerInit(uint32_t AHRSSamplingPeriod,
                        uint32_t motorSamplingPeriod,
-                       uint32_t sonarSamplingPeriod);
+                       uint32_t odometrySamplingPeriod);
 void PwmTimerInit(void);
 void RightEncoderTimerInit(void);
 void SonarEchoTimerInit(void);
 void SonarPulseTimerInit(void);
+void SendingTimerInit(uint32_t dataSendingPeriod,
+                      uint32_t sonarSamplingPulses,
+                      uint32_t mpuSamplingPulses);
 
 void initTim1GPIO();
 void initTim3GPIO();

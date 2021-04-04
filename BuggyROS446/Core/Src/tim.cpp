@@ -1,4 +1,4 @@
-/*
+﻿/*
 //=========================================
 // On Board Peripherals
 //=========================================
@@ -111,6 +111,7 @@ extern TIM_HandleTypeDef hSendingTimer;      // Periodic Sending Timer
 
 
 // Defined in main.cpp
+extern double sendingClockFrequency;  // 10KHz
 extern double periodicClockFrequency; // 10MHz
 extern double pwmClockFrequency;      // 1MHz
 extern double sonarClockFrequency;    // 10MHz (100ns period)
@@ -118,6 +119,13 @@ extern double sonarPulseDelay;        // in seconds
 extern double sonarPulseWidth;        // in seconds
 extern double soundSpeed;             // m/s
 
+// Defined in main.cpp
+extern uint32_t MOTOR_CHANNEL;
+extern uint32_t ODOMETRY_CHANNEL;
+extern uint32_t IMU_CHANNEL;
+extern uint32_t SENDING_CHANNEL;
+extern uint32_t SONAR_CHANNEL;
+extern uint32_t MPU_CHANNEL;
 
 // Left Encoder (TIM1 - Advanced Timer)
 void
@@ -163,7 +171,7 @@ LeftEncoderTimerInit() {
 void
 SamplingTimerInit(uint32_t AHRSSamplingPeriod,
                   uint32_t motorSamplingPeriod,
-                  uint32_t sonarSamplingPeriod)
+                  uint32_t odometrySamplingPeriod)
 {
     __HAL_RCC_TIM2_CLK_ENABLE();
 
@@ -195,17 +203,17 @@ SamplingTimerInit(uint32_t AHRSSamplingPeriod,
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 
     sConfigOC.Pulse = motorSamplingPeriod; // CCR register
-    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, TIM_CHANNEL_2) != HAL_OK) {
+    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, MOTOR_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 
-    sConfigOC.Pulse = sonarSamplingPeriod;
-    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, TIM_CHANNEL_3) != HAL_OK) {
+    sConfigOC.Pulse = odometrySamplingPeriod;
+    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, ODOMETRY_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 
     sConfigOC.Pulse = AHRSSamplingPeriod;
-    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, TIM_CHANNEL_4) != HAL_OK) {
+    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, IMU_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 }
@@ -386,21 +394,20 @@ SonarPulseTimerInit(void) {
 }
 
 
-// TIM8 init function
+// Sending Timer Periodic Interrupt (TIM8 Advanced Timer No GPIO needed)
 void
-MX_TIM8_Init(void) {
+SendingTimerInit(uint32_t dataSendingPeriod,
+                 uint32_t sonarSamplingPulses,
+                 uint32_t mpuSamplingPulses)
+{
 
     __HAL_RCC_TIM8_CLK_ENABLE();
 
-    TIM_MasterConfigTypeDef sMasterConfig = {0};
-    TIM_OC_InitTypeDef sConfigOC = {0};
-    TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
-
-    // Prescaler value to have a 10MHz TIM2 Input Counter Clock
-    uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/periodicClockFrequency)-1;
+    // Prescaler value to have a 10KHz TIM8 Input Counter Clock
+    uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/sendingClockFrequency)-1;
 
     hSendingTimer.Instance = TIM8;
-    hSendingTimer.Init.Period            = 0xFFFF;
+    hSendingTimer.Init.Period            = 0xFFFFFFFF;
     hSendingTimer.Init.Prescaler         = uwPrescalerValue;
     hSendingTimer.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     hSendingTimer.Init.CounterMode       = TIM_COUNTERMODE_UP;
@@ -416,48 +423,53 @@ MX_TIM8_Init(void) {
     if (HAL_TIM_ConfigClockSource(&hSendingTimer, &sClockSourceConfig) != HAL_OK) {
         Error_Handler();
     }
-
     if (HAL_TIM_OC_Init(&hSendingTimer) != HAL_OK) {
         Error_Handler();
     }
+
+    TIM_MasterConfigTypeDef sMasterConfig;
+    memset(&sMasterConfig, 0, sizeof(sMasterConfig));
     sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
     if (HAL_TIMEx_MasterConfigSynchronization(&hSendingTimer, &sMasterConfig) != HAL_OK) {
         Error_Handler();
     }
-    sConfigOC.OCMode = TIM_OCMODE_TIMING;
-    sConfigOC.Pulse = 0;
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+
+    TIM_OC_InitTypeDef sConfigOC;
+    memset(&sConfigOC, 0, sizeof(sConfigOC));
+    sConfigOC.OCMode       = TIM_OCMODE_TIMING;
+    sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
+    sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
+    sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-    if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
+    sConfigOC.Pulse        = dataSendingPeriod;
+    if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, SENDING_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
-    if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, TIM_CHANNEL_2) != HAL_OK) {
+
+    sConfigOC.Pulse = sonarSamplingPulses;
+    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, SONAR_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
-    if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, TIM_CHANNEL_3) != HAL_OK) {
+
+    sConfigOC.Pulse = mpuSamplingPulses;
+    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, MPU_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
-    if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-    {
-        Error_Handler();
-    }
-    sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+
+    TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig;
+    memset(&sBreakDeadTimeConfig, 0, sizeof(sBreakDeadTimeConfig));
+    sBreakDeadTimeConfig.OffStateRunMode  = TIM_OSSR_DISABLE;
     sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
-    sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-    sBreakDeadTimeConfig.DeadTime = 0;
-    sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
-    sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
-    sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+    sBreakDeadTimeConfig.LockLevel        = TIM_LOCKLEVEL_OFF;
+    sBreakDeadTimeConfig.DeadTime         = 0;
+    sBreakDeadTimeConfig.BreakState       = TIM_BREAK_DISABLE;
+    sBreakDeadTimeConfig.BreakPolarity    = TIM_BREAKPOLARITY_HIGH;
+    sBreakDeadTimeConfig.AutomaticOutput  = TIM_AUTOMATICOUTPUT_DISABLE;
     if (HAL_TIMEx_ConfigBreakDeadTime(&hSendingTimer, &sBreakDeadTimeConfig) != HAL_OK) {
         Error_Handler();
     }
-    /* USER CODE BEGIN TIM8_Init 2 */
-
-    /* USER CODE END TIM8_Init 2 */
 }
 
 
