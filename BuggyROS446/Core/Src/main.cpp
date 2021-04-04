@@ -175,6 +175,7 @@ static void Init_ROS();
 static void resetOdometry();
 static bool updateOdometry();
 static void calibrateIMU();
+static void updateIMU();
 static void calculateVariance(float* data, double* var, int nData);
 
 
@@ -273,19 +274,19 @@ double odom_pose[3]  = {0.0};
 ///===================
 /// Update Intervals
 ///===================
-uint32_t IMUSamplingFrequency    = 400; // [Hz]
+uint32_t IMUSamplingFrequency    = 2;//400; // [Hz]
 uint32_t IMUSamplingPulses       = uint32_t(periodicClockFrequency/IMUSamplingFrequency +0.5); // [Hz]
-uint32_t motorSamplingFrequency  = 100;  // [Hz]
+uint32_t motorSamplingFrequency  = 2;//100;  // [Hz]
 uint32_t motorSamplingPulses     = uint32_t(periodicClockFrequency/motorSamplingFrequency+0.5); // [Hz]
-uint32_t sonarSamplingFrequency  = 15;  // [Hz] (Max 40Hz)
-uint32_t sonarSamplingPulses     = uint32_t(periodicClockFrequency/sonarSamplingFrequency+0.5);
+uint32_t odometryUpdateFrequency = 2;//15;  // [Hz]
+uint32_t odometrySamplingPulses  = uint32_t(periodicClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
 
-uint32_t dataSendingFrequency    = 4*15;// [Hz]
+uint32_t dataSendingFrequency    = 2;//4*15;// [Hz]
 uint32_t dataSendingPulses       = uint32_t(sendingClockFrequency/dataSendingFrequency +0.5); // [Hz]
-uint32_t odometryUpdateFrequency = 4*15;  // [Hz]
-uint32_t odometrySamplingPulses  = uint32_t(sendingClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
-uint32_t mpuSamplingFrequency    = 400;  // [Hz]
-uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/sonarSamplingFrequency+0.5);
+uint32_t sonarSamplingFrequency  = 2;//15;  // [Hz] (Max 40Hz)
+uint32_t sonarSamplingPulses     = uint32_t(sendingClockFrequency/sonarSamplingFrequency+0.5);
+uint32_t mpuSamplingFrequency    = 2;//400;  // [Hz]
+uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/mpuSamplingFrequency+0.5);
 
 bool isIMUpresent     = false;
 bool isMPU6050present = false;
@@ -385,11 +386,14 @@ Loop() {
     nn = 0;
     HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
     // Start the Periodic Sampling Counters:
-    HAL_TIM_OC_Start_IT(&hSamplingTimer, IMU_CHANNEL);      // IMU
     HAL_TIM_OC_Start_IT(&hSamplingTimer, MOTOR_CHANNEL);    // Motors
     HAL_TIM_OC_Start_IT(&hSamplingTimer, ODOMETRY_CHANNEL); // Odometry & Sonar
+    HAL_TIM_OC_Start_IT(&hSamplingTimer, IMU_CHANNEL);      // IMU
+
     HAL_NVIC_EnableIRQ(SENDING_IRQ);
     HAL_TIM_OC_Start_IT(&hSendingTimer, SENDING_CHANNEL);
+    HAL_TIM_OC_Start_IT(&hSendingTimer, SONAR_CHANNEL);
+    HAL_TIM_OC_Start_IT(&hSendingTimer, MPU_CHANNEL);
 
 //    while(nh.connected()) {
     while(true) {
@@ -398,9 +402,8 @@ Loop() {
             nn += 1;
             HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
             if(nn == 1) {
-                updateOdometry();
                 odom_pub.publish(&odom);
-                HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+                //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             }
             else if(nn == 2) {
                 if(isIMUpresent) {
@@ -415,12 +418,6 @@ Loop() {
             else {
                 nn = 0;
                 if(isMPU6050present) {
-                    imu2Data.linear_acceleration.x = mpuData.Ax*9.80665;
-                    imu2Data.linear_acceleration.y = mpuData.Ay*9.80665;
-                    imu2Data.linear_acceleration.z = mpuData.Az*9.80665;
-                    imu2Data.angular_velocity.x    = mpuData.Gx/180.0*M_PI;
-                    imu2Data.angular_velocity.y    = mpuData.Gy/180.0*M_PI;
-                    imu2Data.angular_velocity.z    = mpuData.Gz/180.0*M_PI;
                     imu2_pub.publish(&imu2Data);
                 }
             }
@@ -458,6 +455,8 @@ Loop() {
 
     // Stop Sending Out New Data:
     HAL_TIM_OC_Stop_IT(&hSendingTimer, SENDING_CHANNEL);
+    HAL_TIM_OC_Stop_IT(&hSendingTimer, SONAR_CHANNEL);
+    HAL_TIM_OC_Stop_IT(&hSendingTimer, MPU_CHANNEL);
     HAL_NVIC_DisableIRQ(SENDING_IRQ);
 
     // Stop the Periodic Sampling:
@@ -564,10 +563,9 @@ Init_Hardware() {
     SonarPulseTimerInit();
 #endif
 
-    // Initialize Periodic Sampling Timer
+    // Initialize Periodic Sampling Timer #1 (TIM2)
     SamplingTimerInit(IMUSamplingPulses, motorSamplingPulses, odometrySamplingPulses);
-
-    // Initialize Periodic Sending Timer (also used for
+    // Initialize Periodic Sampling & Sending Timer #2 (TIM8)
     SendingTimerInit(dataSendingPulses, sonarSamplingPulses, mpuSamplingPulses);
 
     // Enable Push Button Interrupt
@@ -839,6 +837,7 @@ calibrateIMU() {
     imuData.orientation.z = qz;
     imuData.orientation.w = qw;
 
+    /// Magnetometers
     for(int i=0; i<nData; i++) {
         Magn.ReadScaledAxis(MagValues);
         j = 3 * i;
@@ -856,6 +855,32 @@ calibrateIMU() {
     compassData.magnetic_field_covariance[8] = variance[2];
     nh.loginfo("compassData.magnetic_field_covariance Calculated...");
     delete data;
+}
+
+static void
+updateIMU() {
+    Acc.get_Gxyz(AccelValues);
+    Gyro.readGyro(GyroValues);
+    Magn.ReadScaledAxis(MagValues);
+    Madgwick.update(GyroValues, AccelValues, MagValues); // ~13us
+    Madgwick.getRotation(&qw, &qx, &qy, &qz);
+    imuData.orientation.w = qw;
+    imuData.orientation.x = qy;
+    imuData.orientation.y = qx;
+    imuData.orientation.z = qz;
+    compassData.header.stamp = nh.now();
+    compassData.magnetic_field.x = MagValues[0];
+    compassData.magnetic_field.y = MagValues[1];
+    compassData.magnetic_field.z = MagValues[2];
+    // Convert accel from g to m/sec^2
+    imuData.linear_acceleration.x = AccelValues[0] * 9.80665 ;
+    imuData.linear_acceleration.y = AccelValues[1] * 9.80665 ;
+    imuData.linear_acceleration.z = AccelValues[2] * 9.80665 ;
+    // Convert gyroscope from degrees/sec to radians/sec
+    imuData.angular_velocity.x = DEG2RAD(GyroValues[0]);
+    imuData.angular_velocity.y = DEG2RAD(GyroValues[1]);
+    imuData.angular_velocity.z = DEG2RAD(GyroValues[2]);
+    imuData.header.stamp = nh.now();
 }
 
 
@@ -880,6 +905,7 @@ void
 HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
     if(htim->Instance == hSamplingTimer.Instance) {
         if(htim->Channel == MOTOR_UPDATE_CHANNEL) { // Time to Update Motors Data ? (50Hz)
+//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR2 += motorSamplingPulses;
             if(pLeftControlledMotor) {
                 pLeftControlledMotor->Update();
@@ -888,65 +914,50 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
                 pRightControlledMotor->Update();
             }
         }
-        else if(htim->Channel == IMU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-            htim->Instance->CCR4 += IMUSamplingPulses;
-            if(isMPU6050present)
-                mpu6050.Read_All(&hi2c2, &mpuData);
-            if(isIMUpresent) {
-                Acc.get_Gxyz(AccelValues);
-                Gyro.readGyro(GyroValues);
-                Magn.ReadScaledAxis(MagValues);
-                Madgwick.update(GyroValues, AccelValues, MagValues); // ~13us
-                Madgwick.getRotation(&qw, &qx, &qy, &qz);
-                imuData.orientation.w = qw;
-                imuData.orientation.x = qy;
-                imuData.orientation.y = qx;
-                imuData.orientation.z = qz;
-                compassData.header.stamp = nh.now();
-                compassData.magnetic_field.x = MagValues[0];
-                compassData.magnetic_field.y = MagValues[1];
-                compassData.magnetic_field.z = MagValues[2];
-                // Convert accel from g to m/sec^2
-                imuData.linear_acceleration.x = AccelValues[0] * 9.80665 ;
-                imuData.linear_acceleration.y = AccelValues[1] * 9.80665 ;
-                imuData.linear_acceleration.z = AccelValues[2] * 9.80665 ;
-                // Convert gyroscope from degrees/sec to radians/sec
-                imuData.angular_velocity.x = DEG2RAD(GyroValues[0]);
-                imuData.angular_velocity.y = DEG2RAD(GyroValues[1]);
-                imuData.angular_velocity.z = DEG2RAD(GyroValues[2]);
-                imuData.header.stamp = nh.now();
-                //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-            }
-        }
         else if(htim->Channel == ODOMETRY_UPDATE_CHANNEL) { // Time to Update Odometry
+//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR3 += odometrySamplingPulses;
-#if defined(USE_SONAR)
-            uhCaptureIndex = 0;
-            LL_TIM_IC_SetPolarity(TIM5, LL_TIM_CHANNEL_CH2, LL_TIM_IC_POLARITY_RISING);
-            LL_TIM_EnableCounter(hSonarPulseTimer.Instance);
-#endif
-            isTimeToUpdateOdometry = true; // We use this Timer to send the updated Odometry
+            updateOdometry();
+        }
+        else if(htim->Channel == IMU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
+//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+            htim->Instance->CCR4 += IMUSamplingPulses;
+            if(isIMUpresent) {
+                updateIMU();
+            }
         }
     } // if(htim->Instance == hSamplingTimer.Instance)
 
     else if(htim->Instance == hSendingTimer.Instance) {
         if(htim->Channel == SENDING_TIME_CHANNEL) { // Time to Send Out New Data (4*15Hz)
+//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR1 += dataSendingPulses;
             bSendNewData = true;
         }
-        else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-            htim->Instance->CCR4 += mpuSamplingPulses;
-            if(isMPU6050present)
-                mpu6050.Read_All(&hi2c2, &mpuData);
-        }
         else if(htim->Channel == SONAR_UPDATE_CHANNEL) { // Time to Update Odometry
-            htim->Instance->CCR3 += sonarSamplingPulses;
+            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+            htim->Instance->CCR2 += sonarSamplingPulses;
 #if defined(USE_SONAR)
             uhCaptureIndex = 0;
             LL_TIM_IC_SetPolarity(TIM5, LL_TIM_CHANNEL_CH2, LL_TIM_IC_POLARITY_RISING);
             LL_TIM_EnableCounter(hSonarPulseTimer.Instance);
 #endif
         }
+        else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
+            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+            htim->Instance->CCR3 += mpuSamplingPulses;
+            if(isMPU6050present) {
+                mpu6050.Read_All(&hi2c2, &mpuData);
+                imu2Data.linear_acceleration.x = mpuData.Ax*9.80665;
+                imu2Data.linear_acceleration.y = mpuData.Ay*9.80665;
+                imu2Data.linear_acceleration.z = mpuData.Az*9.80665;
+                imu2Data.angular_velocity.x    = mpuData.Gx/180.0*M_PI;
+                imu2Data.angular_velocity.y    = mpuData.Gy/180.0*M_PI;
+                imu2Data.angular_velocity.z    = mpuData.Gz/180.0*M_PI;
+            }
+        }
+        else
+            Error_Handler();
     } // if(htim->Instance == hSendingTimer.Instance)
 }
 

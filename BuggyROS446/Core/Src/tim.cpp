@@ -435,6 +435,19 @@ SendingTimerInit(uint32_t dataSendingPeriod,
         Error_Handler();
     }
 
+    TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig;
+    memset(&sBreakDeadTimeConfig, 0, sizeof(sBreakDeadTimeConfig));
+    sBreakDeadTimeConfig.OffStateRunMode  = TIM_OSSR_DISABLE;
+    sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+    sBreakDeadTimeConfig.LockLevel        = TIM_LOCKLEVEL_OFF;
+    sBreakDeadTimeConfig.DeadTime         = 0;
+    sBreakDeadTimeConfig.BreakState       = TIM_BREAK_DISABLE;
+    sBreakDeadTimeConfig.BreakPolarity    = TIM_BREAKPOLARITY_HIGH;
+    sBreakDeadTimeConfig.AutomaticOutput  = TIM_AUTOMATICOUTPUT_DISABLE;
+    if (HAL_TIMEx_ConfigBreakDeadTime(&hSendingTimer, &sBreakDeadTimeConfig) != HAL_OK) {
+        Error_Handler();
+    }
+
     TIM_OC_InitTypeDef sConfigOC;
     memset(&sConfigOC, 0, sizeof(sConfigOC));
     sConfigOC.OCMode       = TIM_OCMODE_TIMING;
@@ -443,6 +456,7 @@ SendingTimerInit(uint32_t dataSendingPeriod,
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+
     sConfigOC.Pulse        = dataSendingPeriod;
     if (HAL_TIM_OC_ConfigChannel(&hSendingTimer, &sConfigOC, SENDING_CHANNEL) != HAL_OK) {
         Error_Handler();
@@ -455,19 +469,6 @@ SendingTimerInit(uint32_t dataSendingPeriod,
 
     sConfigOC.Pulse = mpuSamplingPulses;
     if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, MPU_CHANNEL) != HAL_OK) {
-        Error_Handler();
-    }
-
-    TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig;
-    memset(&sBreakDeadTimeConfig, 0, sizeof(sBreakDeadTimeConfig));
-    sBreakDeadTimeConfig.OffStateRunMode  = TIM_OSSR_DISABLE;
-    sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
-    sBreakDeadTimeConfig.LockLevel        = TIM_LOCKLEVEL_OFF;
-    sBreakDeadTimeConfig.DeadTime         = 0;
-    sBreakDeadTimeConfig.BreakState       = TIM_BREAK_DISABLE;
-    sBreakDeadTimeConfig.BreakPolarity    = TIM_BREAKPOLARITY_HIGH;
-    sBreakDeadTimeConfig.AutomaticOutput  = TIM_AUTOMATICOUTPUT_DISABLE;
-    if (HAL_TIMEx_ConfigBreakDeadTime(&hSendingTimer, &sBreakDeadTimeConfig) != HAL_OK) {
         Error_Handler();
     }
 }
