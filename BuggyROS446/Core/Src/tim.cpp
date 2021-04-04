@@ -179,7 +179,7 @@ SamplingTimerInit(uint32_t AHRSSamplingPeriod,
     uint32_t uwPrescalerValue = (uint32_t) (SystemCoreClock/periodicClockFrequency)-1;
 
     hSamplingTimer.Instance = TIM2;
-    hSamplingTimer.Init.Period            = 0xFFFFFFFF;             // ARR register (32 bit)
+    hSamplingTimer.Init.Period            = 0xFFFF;             // ARR register (32 bit)
     hSamplingTimer.Init.Prescaler         = uwPrescalerValue;       // PSC
     hSamplingTimer.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1; // (0) No Clock Division
     hSamplingTimer.Init.CounterMode       = TIM_COUNTERMODE_UP;

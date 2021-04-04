@@ -401,6 +401,7 @@ Loop() {
             bSendNewData = false;
             nn += 1;
             HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
+            HAL_NVIC_DisableIRQ(SENDING_IRQ);
             if(nn == 1) {
                 odom_pub.publish(&odom);
                 //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
@@ -422,6 +423,7 @@ Loop() {
                 }
             }
             HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
+            HAL_NVIC_EnableIRQ(SENDING_IRQ);
             /// If No New Speed Data have been Received in the Right Time
             /// Halt the Robot to avoid possible damages
 //            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
@@ -905,7 +907,7 @@ void
 HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
     if(htim->Instance == hSamplingTimer.Instance) {
         if(htim->Channel == MOTOR_UPDATE_CHANNEL) { // Time to Update Motors Data ? (50Hz)
-//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR2 += motorSamplingPulses;
             if(pLeftControlledMotor) {
                 pLeftControlledMotor->Update();
@@ -915,12 +917,12 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
             }
         }
         else if(htim->Channel == ODOMETRY_UPDATE_CHANNEL) { // Time to Update Odometry
-//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR3 += odometrySamplingPulses;
             updateOdometry();
         }
         else if(htim->Channel == IMU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR4 += IMUSamplingPulses;
             if(isIMUpresent) {
                 updateIMU();
@@ -930,12 +932,12 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 
     else if(htim->Instance == hSendingTimer.Instance) {
         if(htim->Channel == SENDING_TIME_CHANNEL) { // Time to Send Out New Data (4*15Hz)
-//            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR1 += dataSendingPulses;
             bSendNewData = true;
         }
         else if(htim->Channel == SONAR_UPDATE_CHANNEL) { // Time to Update Odometry
-            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR2 += sonarSamplingPulses;
 #if defined(USE_SONAR)
             uhCaptureIndex = 0;
@@ -944,7 +946,7 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 #endif
         }
         else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             htim->Instance->CCR3 += mpuSamplingPulses;
             if(isMPU6050present) {
                 mpu6050.Read_All(&hi2c2, &mpuData);
