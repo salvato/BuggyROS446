@@ -498,7 +498,7 @@ initTim3GPIO() { // Motors PWMs
     __HAL_RCC_GPIOA_CLK_ENABLE();
     // TIM3 GPIO Configuration
     //    PA6 ------> TIM3_CH1 (Output CN10 - 13)
-    //    PA7 ------> TIM3_CH2 (Input  CN10 - 15)
+    //    PA7 ------> TIM3_CH2 (Output CN10 - 15)
     GPIO_InitStruct.Pin       = GPIO_PIN_6 | GPIO_PIN_7;
     GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull      = GPIO_PULLUP;

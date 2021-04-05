@@ -60,11 +60,11 @@
 // Channel4         ------> IMU Sampling
 
 
-//==================================
+//==============================================
 // TIM3 GPIO Configuration (PWM)
-//==================================
-// PA6 (CN10 13)    ------> TIM3_CH1
-// PA7 (CN10 15)    ------> TIM3_CH2
+//==============================================
+// PA6 (CN10 13)    ------> TIM3_CH1 (LM298 ENB)
+// PA7 (CN10 15)    ------> TIM3_CH2 (LM298 ENA)
 
 
 //==========================================
@@ -79,17 +79,17 @@
 
 
 //====================================
-// Left Motor Direction Pins
-// PC8  (CN10  2)    ------> LM298 IN1
-// PC9  (CN10  1)    ------> LM298 IN2
-//====================================
-
-
-//====================================
 // Right Motor Direction Pins
-// PC10 (CN7  1)    ------> LM298 IN3
-// PC11 (CN7  2)    ------> LM298 IN4
+// PC10 (CN7  1)    ------> LM298 IN1
+// PC11 (CN7  2)    ------> LM298 IN2
 //====================================
+
+//======================================
+// Left Motor Direction Pins
+// PC8  (CN10  2)    ------> (LM298 IN3)
+// PC9  (CN10  1)    ------> (LM298 IN4)
+//======================================
+
 
 //======================================
 // Used Peripherals:
@@ -101,6 +101,28 @@
 //     TIM5 ---> Ultrasound Sensor
 //     TIM10---> Ultrasound Sensor Pulse
 //======================================
+
+//==================================================
+//     05-Apr-2020     <============================
+//==================================================
+//             Slow Motors Connections
+//==================================================
+// Right Motor:
+//     ENA --------------> TIM3_CH2 (PA7  CN10 - 15)
+//     IN1 --------------> GPIO_C   (PC10 CN7  -  1)
+//     IN2 --------------> GPIO_C   (PC11 CN7  -  2)
+//     EncoderA (Yellow)-> TIM4_CH1 (PB6  CN10 - 17)
+//     EncoderB (Green)--> TIM4_CH2 (PB7  CN7  - 21)
+//==================================================
+// Left Motor:
+//     ENB --------------> TIM3_CH1 (PA6  CN10 - 13)
+//     IN3 --------------> GPIO_C   (PC8  CN10 -  2)
+//     IN4 --------------> GPIO_C   (PC9  CN10 -  1)
+//     EncoderA (Yellow)-> TIM1_CH1 (PA8  CN10 - 23)
+//     EncoderB (Green)--> TIM1_CH2 (PA9  CN10 - 21)
+//==================================================
+
+
 
 //=============================================================================
 // ROS information:
@@ -523,15 +545,15 @@ Init_Hardware() {
     // =============> DcMotor(forwardPort, forwardPin, reversePort,  reversePin,
     //                        pwmPort,  pwmPin, pwmTimer, timerChannel)
 #if defined(SLOW_MOTORS)
-    pLeftMotor  = new DcMotor(GPIOC, GPIO_PIN_9, GPIOC, GPIO_PIN_8,
-    GPIOA, GPIO_PIN_6, &hPwmTimer, TIM_CHANNEL_1);
     pRightMotor = new DcMotor(GPIOC, GPIO_PIN_11, GPIOC, GPIO_PIN_10,
     GPIOA, GPIO_PIN_7, &hPwmTimer, TIM_CHANNEL_2);
-#else
-    pLeftMotor  = new DcMotor(GPIOC, GPIO_PIN_8, GPIOC, GPIO_PIN_9,
+    pLeftMotor  = new DcMotor(GPIOC, GPIO_PIN_9, GPIOC, GPIO_PIN_8,
     GPIOA, GPIO_PIN_6, &hPwmTimer, TIM_CHANNEL_1);
+#else
     pRightMotor = new DcMotor(GPIOC, GPIO_PIN_10, GPIOC, GPIO_PIN_11,
     GPIOA, GPIO_PIN_7, &hPwmTimer, TIM_CHANNEL_2);
+    pLeftMotor  = new DcMotor(GPIOC, GPIO_PIN_8, GPIOC, GPIO_PIN_9,
+    GPIOA, GPIO_PIN_6, &hPwmTimer, TIM_CHANNEL_1);
 #endif
 
     /// Initialize Motor Controllers
