@@ -40,6 +40,7 @@ Encoder::readAndResetCounts() { // in Counts
 void
 Encoder::reset() {
     htimer->Instance->CNT = 0;
+    total = 0;
 }
 
 

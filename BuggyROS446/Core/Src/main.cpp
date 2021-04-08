@@ -163,7 +163,7 @@
 #endif
 #define DEG2RAD(x) (x)*M_PI/180.0
 
-#define USE_SONAR
+//#define USE_SONAR
 
 // ========== On TIM2 ==========
 #define MOTOR_UPDATE_CHANNEL    HAL_TIM_ACTIVE_CHANNEL_2
@@ -345,7 +345,7 @@ ros::Publisher odom_pub("odom", &odom);
 ros::Publisher imu_pub("imu_data", &imuData);
 ros::Publisher mag_pub("mag_data", &compassData);
 ros::Publisher imu2_pub("imu2_data", &imu2Data);
-ros::Publisher obstacleDistance_pub("buggyDistance", &obstacleDistance);
+ros::Publisher obstacleDistance_pub("obstacle_distance", &obstacleDistance);
 
 // Subscribers <===========================
 ros::Subscriber<geometry_msgs::Twist>   targetSpeed_sub("cmd_vel", &targetSpeed_cb);
@@ -425,11 +425,11 @@ Loop() {
             HAL_NVIC_DisableIRQ(SENDING_IRQ);
             if(nn == 1) {
                 odom_pub.publish(&odom);
-                HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
             }
             else if(nn == 2) {
                 if(isIMUpresent) {
                     imu_pub.publish(&imuData);
+                    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
                 }
             }
             else if(nn == 3) {
@@ -491,10 +491,12 @@ Loop() {
 //=========================
 bool
 updateOdometry() {
+    /// Sampled Interval
+    double dt = nh.now().toSec()-odom.header.stamp.toSec();
+    odom.header.stamp = nh.now();
     /// Wheel's Path Length in the Sampling Interval
     double wheel_l = pLeftControlledMotor->spaceTraveled();
     double wheel_r = pRightControlledMotor->spaceTraveled();
-    odom.header.stamp = nh.now();
     /// Robot's Axis Rotation in the Sampling Interval
     double delta_theta = (wheel_r-wheel_l)/TRACK_LENGTH;
     /// Compute Updated Odometric Pose (approximated via Runge Kutta 2nd Order Integration)
@@ -507,12 +509,12 @@ updateOdometry() {
     /// Compute Updated Odometric Orientation
     odom.pose.pose.orientation = tf::createQuaternionFromYaw(odom_pose[2]);
     /// Update the Odometry Twist (Instantaneouse Velocities)
-    odom.twist.twist.linear.x  = delta_s * odometryUpdateFrequency;     // v
+    odom.twist.twist.linear.x  = delta_s / dt;     // v
     // Only for debugging
     ///    odom.twist.twist.linear.y  = odom_pose[2];
     ///    odom.twist.twist.linear.y  = wheel_l;
     ///    odom.twist.twist.linear.z  = wheel_r;
-    odom.twist.twist.angular.z = delta_theta * odometryUpdateFrequency; // w
+    odom.twist.twist.angular.z = delta_theta / dt; // w
 
     return true;
 }
@@ -522,6 +524,8 @@ static void
 resetOdometry() {
     pLeftControlledMotor->resetPosition();
     pRightControlledMotor->resetPosition();
+    odom_pose[0] = odom_pose[1] = odom_pose[2] = 0.0;
+
 }
 
 
@@ -676,9 +680,11 @@ Init_ROS() {
     odom.child_frame_id = {"base_link"};
 
     imuData.header.frame_id  = {"imu_link"};
+
+    compassData.header.frame_id = {"imu_link"};
+
     imu2Data.header.frame_id = {"imu_link"};
     imu2Data.orientation.w = 1.0;
-
 
     nh.initNode();
 
@@ -687,6 +693,10 @@ Init_ROS() {
     if(!nh.subscribe(left_PID_sub))
         Error_Handler();
     if(!nh.subscribe(right_PID_sub))
+        Error_Handler();
+    if(!nh.subscribe(calibrate_IMU_sub))
+        Error_Handler();
+    if(!nh.subscribe(reset_odometry_sub))
         Error_Handler();
 
     if(!nh.advertise(odom_pub))
@@ -777,23 +787,15 @@ calibrateIMU() {
 //    for(int i=0; i<nData; i++) {
 //        j = 3 * i;
 //        while(!Acc.getInterruptSource(7)) {}
-//        Acc.readAccel(acc);
+//        Acc.readAccelRAW(acc);
 //        offsets[0] += acc[0];
 //        offsets[1] += acc[1];
 //        offsets[2] += acc[2];
 //        nh.spinOnce();
 //    }
-//    offsets[0] /= nData;
-//    offsets[1] /= nData;
-//    offsets[2] /= nData;
-
-//    float module = offsets[0]*offsets[0] +
-//                   offsets[1]*offsets[1] +
-//                   offsets[2]*offsets[2];
-//    module = sqrt(module);
-//    Acc.offsets[0] = offsets[0]*(Acc.gains[0]*9.80665)/module;
-//    Acc.offsets[1] = offsets[1]*(Acc.gains[1]*9.80665)/module;
-//    Acc.offsets[2] = offsets[2]*(Acc.gains[2]*9.80665)/module;
+//    Acc.offsets[0] = offsets[0] / nData;
+//    Acc.offsets[1] = offsets[1] / nData;
+//    Acc.offsets[2] = offsets[2] / nData;
 
     for(int i=0; i<nData; i++) {
         j = 3 * i;

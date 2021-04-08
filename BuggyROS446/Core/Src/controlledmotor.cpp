@@ -105,5 +105,5 @@ ControlledMotor::spaceTraveled () { // in [m]
 /// Resets the wheel's position
 void
 ControlledMotor::resetPosition() {
-    pEncoder->readAndResetTotal();
+    pEncoder->reset();
 }

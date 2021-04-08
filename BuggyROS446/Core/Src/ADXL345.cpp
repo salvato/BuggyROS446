@@ -84,7 +84,7 @@ ADXL345::powerOn() {
 
 // Reads the acceleration into three variable x, y and z
 void
-ADXL345::readAccel(int16_t *x, int16_t *y, int16_t *z) {
+ADXL345::readAccelRAW(int16_t *x, int16_t *y, int16_t *z) {
     readFrom(ADXL345_DATAX0, TO_READ, buff); //read the acceleration data from the ADXL345
 
     // each axis reading comes in 10 bit resolution, ie 2 bytes.
@@ -98,8 +98,8 @@ ADXL345::readAccel(int16_t *x, int16_t *y, int16_t *z) {
 
 // Reads the acceleration into an array of three places
 void
-ADXL345::readAccel(int16_t *xyz){
-    readAccel(xyz, xyz+1, xyz+2);
+ADXL345::readAccelRAW(int16_t *xyz){
+    readAccelRAW(xyz, xyz+1, xyz+2);
 }
 
 
@@ -107,7 +107,7 @@ void
 ADXL345::get_Gxyz(float *xyz){
     int16_t i;
     int16_t xyz_int[3];
-    readAccel(xyz_int);
+    readAccelRAW(xyz_int);
     for(i=0; i<3; i++){
         xyz[i] = (float(xyz_int[i])-offsets[i]) * gains[i];
     }
@@ -117,7 +117,7 @@ ADXL345::get_Gxyz(float *xyz){
 void
 ADXL345::get_Gxyz(geometry_msgs::Vector3* acceleration) {
     int16_t xyz_int[3];
-    readAccel(xyz_int);
+    readAccelRAW(xyz_int);
     acceleration->x = double(xyz_int[0]-offsets[0]) * gains[0];
     acceleration->y = double(xyz_int[1]-offsets[1]) * gains[1];
     acceleration->z = double(xyz_int[2]-offsets[2]) * gains[2];
