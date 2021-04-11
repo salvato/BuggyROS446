@@ -42,14 +42,10 @@ HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c) {
         // I2C2 GPIO Configuration
         // PB10  ------> I2C2_SCL (CN10 - 25)
         // PB3   ------> I2C2_SDA (CN10 - 31)
-        GPIO_InitStruct.Pin       = GPIO_PIN_10;
+        GPIO_InitStruct.Pin       = GPIO_PIN_10 | GPIO_PIN_3;
         GPIO_InitStruct.Mode      = GPIO_MODE_AF_OD;
         GPIO_InitStruct.Pull      = GPIO_PULLUP;
-        GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
-        GPIO_InitStruct.Alternate = GPIO_AF4_I2C2;
-        HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-        GPIO_InitStruct.Pin       = GPIO_PIN_3;
+        GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
         GPIO_InitStruct.Alternate = GPIO_AF4_I2C2;
         HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 

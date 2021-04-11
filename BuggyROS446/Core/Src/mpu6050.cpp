@@ -42,6 +42,7 @@
 #define PWR_MGMT_1_REG   0x6B
 #define SMPLRT_DIV_REG   0x19
 #define ACCEL_CONFIG_REG 0x1C
+#define INT_PIN_CONFIG_REG 0x37
 #define ACCEL_XOUT_H_REG 0x3B
 #define TEMP_OUT_H_REG   0x41
 #define GYRO_CONFIG_REG  0x1B
@@ -92,6 +93,10 @@ MPU6050::Init(I2C_HandleTypeDef *I2Cx) {
     // XG_ST=0, YG_ST=0, ZG_ST=0, FS_SEL=0 -> +/- 250 °/s
     Data = 0x00;
     HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, GYRO_CONFIG_REG, 1, &Data, 1, i2c_timeout);
+//    // ENABLE AUX_I2C Port
+//    Data = 0x02;
+//    HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, INT_PIN_CONFIG_REG, 1, &Data, 1, i2c_timeout);
+
     return true;
 }
 
