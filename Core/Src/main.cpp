@@ -230,14 +230,14 @@ DMA_HandleTypeDef  hdma_usart2_rx;
 ///==================
 /// Buggy Mechanics
 ///==================
-float l_wheel_diameter = 0.067;  // [m]
-float r_wheel_diameter = 0.067;  // [m]
-float track_length     = 0.209;  // Tire's Distance [m]
 #if defined(SLOW_MOTORS)
     static const int    ENCODER_COUNTS_PER_TIRE_TURN = 12*9*10*4; // Slow Motors !!!
 #else
     static const int    ENCODER_COUNTS_PER_TIRE_TURN = 12*9*4; // = 432 ==>
 #endif
+float l_wheel_diameter = 0.067;  // [m]
+float r_wheel_diameter = 0.067;  // [m]
+float track_length     = 0.209;  // Tire's Distance [m]
 
 
 ///===================
@@ -382,7 +382,6 @@ Loop() {
         nh.spinOnce();
         HAL_Delay(10);
     }
-    getParameters();
     /// Now Serial Node is Up and Ready
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
     resetOdometry();
@@ -390,10 +389,15 @@ Loop() {
         calibrateIMU();
     }
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-    HAL_Delay(1000);
+    uint32_t t0 = HAL_GetTick();
+    while(HAL_GetTick()-t0 < 1000) {
+        HAL_Delay(10); // Ensure a Stationary Buggy
+        nh.spinOnce();
+    }
+    getParameters();
 
     // Start the Periodic Sampling:
-    nh.loginfo("Buggy Ready...");
+    nh.loginfo("Buggy: Ready...");
 
     last_cmd_vel_time = nh.now();
     nn = 0;
@@ -475,28 +479,19 @@ Loop() {
 //====================================================
 void
 getParameters() {
-    if(!nh.getParam("left_p", &LeftP, 1, 1000))
-        LeftP = 0.101;
-    if(!nh.getParam("left_i", &LeftI, 1, 1000))
-        LeftP = 0.008;
-    if(!nh.getParam("left_d", &LeftD, 1, 1000))
-        LeftP = 0.003;
-    if(!nh.getParam("right_p", &RightP, 1, 1000))
-        RightP = 0.101;
-    if(!nh.getParam("right_i", &RightI, 1, 1000))
-        RightI = 0.008;
-    if(!nh.getParam("right_d", &RightD, 1, 1000))
-        RightD = 0.003;
+    while(!nh.getParam("buggy/left_p", &LeftP, 1, 100)) {}
+    while(!nh.getParam("buggy/left_i", &LeftI, 1, 100)) {}
+    while(!nh.getParam("buggy/left_d", &LeftD, 1, 100)) {}
+    while(!nh.getParam("buggy/right_p", &RightP, 1, 100)) {}
+    while(!nh.getParam("buggy/right_i", &RightI, 1, 100)) {}
+    while(!nh.getParam("buggy/right_d", &RightD, 1, 100)) {}
     pLeftControlledMotor->setPID(double(LeftP), double(LeftI), double(LeftD));
     pRightControlledMotor->setPID(double(RightP), double(RightI), double(RightD));
     nh.loginfo("Buggy: new PID Values Set");
 
-    if(!nh.getParam("left_tire_radius", &l_wheel_diameter, 1, 1000))
-        l_wheel_diameter = 0.067;
-    if(!nh.getParam("right_tire_radius", &r_wheel_diameter, 1, 1000))
-        r_wheel_diameter = 0.067;
-    if(!nh.getParam("track_length", &track_length, 1, 1000))
-        track_length = 0.209;
+    while(!nh.getParam("buggy/left_tire_diameter", &l_wheel_diameter, 1, 100)) {}
+    while(!nh.getParam("buggy/right_tire_diameter", &r_wheel_diameter, 1, 100)) {}
+    while(!nh.getParam("buggy/track_length", &track_length, 1, 100)) {}
     L_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*l_wheel_diameter);
     R_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*r_wheel_diameter);
     pLeftControlledMotor->setEncoderCountsPerMeter(L_encoderCountsPerMeter);
@@ -544,7 +539,7 @@ resetOdometry() {
     pLeftControlledMotor->resetPosition();
     pRightControlledMotor->resetPosition();
     odom_pose[0] = odom_pose[1] = odom_pose[2] = 0.0;
-    nh.loginfo("Buggy wheels Odometry has been giReset...");
+    nh.loginfo("Buggy: wheels Odometry has been Reset...");
 }
 
 
@@ -732,7 +727,11 @@ calibrateIMU_cb(const std_msgs::UInt8& msg) {
     rightTargetSpeed = 0.0; // in m/s
     pLeftControlledMotor->setTargetSpeed(leftTargetSpeed);
     pRightControlledMotor->setTargetSpeed(rightTargetSpeed);
-    HAL_Delay(1000); // Ensure a Stationary Buggy
+    uint32_t t0 = HAL_GetTick();
+    while(HAL_GetTick()-t0 < 1000) {
+        HAL_Delay(1); // Ensure a Stationary Buggy
+        nh.spinOnce();
+    }
     bool bSamplingActive = NVIC_GetEnableIRQ(SAMPLING_IRQ) != 0;
     if(bSamplingActive) {
         HAL_NVIC_DisableIRQ(SAMPLING_IRQ);
