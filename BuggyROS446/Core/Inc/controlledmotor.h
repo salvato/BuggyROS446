@@ -22,6 +22,7 @@ public:
     double getCurrentSpeed(); // in m/s
     double spaceTraveled(); // in m
     void resetPosition();
+    void setEncoderCountsPerMeter(double _encoderCountsPerMeter);
 
 public:
 

@@ -587,7 +587,7 @@ public:
   {
     if (requestParam(name, timeout))
     {
-      if (length == req_param_resp.floats_length)
+      if (uint32_t(length) == req_param_resp.floats_length)
       {
         //copy it over
         for (int i = 0; i < length; i++)

@@ -1,7 +1,6 @@
 Core/Inc/ADXL345.h
 Core/Inc/HMC5883L.h
 Core/Inc/ITG3200.h
-Core/Inc/MadgwickAHRS.h
 Core/Inc/PID_v1.h
 Core/Inc/STM32Hardware.h
 Core/Inc/actionlib/TestAction.h
@@ -371,7 +370,6 @@ Core/Inc/visualization_msgs/MenuEntry.h
 Core/Src/ADXL345.cpp
 Core/Src/HMC5883L.cpp
 Core/Src/ITG3200.cpp
-Core/Src/MadgwickAHRS.cpp
 Core/Src/PID_v1.cpp
 Core/Src/controlledmotor.cpp
 Core/Src/dcmotor.cpp

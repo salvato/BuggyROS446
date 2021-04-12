@@ -125,7 +125,6 @@ extern uint32_t ODOMETRY_CHANNEL;
 extern uint32_t IMU_CHANNEL;
 extern uint32_t SENDING_CHANNEL;
 extern uint32_t SONAR_CHANNEL;
-extern uint32_t MPU_CHANNEL;
 
 // Left Encoder (TIM1 - Advanced Timer)
 void
@@ -397,8 +396,7 @@ SonarPulseTimerInit(void) {
 // Sending Timer Periodic Interrupt (TIM8 Advanced Timer No GPIO needed)
 void
 SendingTimerInit(uint32_t dataSendingPeriod,
-                 uint32_t sonarSamplingPeriod,
-                 uint32_t mpuSamplingPeriod)
+                 uint32_t sonarSamplingPeriod)
 {
 
     __HAL_RCC_TIM8_CLK_ENABLE();
@@ -464,11 +462,6 @@ SendingTimerInit(uint32_t dataSendingPeriod,
 
     sConfigOC.Pulse = sonarSamplingPeriod;
     if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, SONAR_CHANNEL) != HAL_OK) {
-        Error_Handler();
-    }
-
-    sConfigOC.Pulse = mpuSamplingPeriod;
-    if(HAL_TIM_OC_ConfigChannel(&hSamplingTimer, &sConfigOC, MPU_CHANNEL) != HAL_OK) {
         Error_Handler();
     }
 }

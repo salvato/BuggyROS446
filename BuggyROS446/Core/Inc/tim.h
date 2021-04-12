@@ -15,8 +15,7 @@ void RightEncoderTimerInit(void);
 void SonarEchoTimerInit(void);
 void SonarPulseTimerInit(void);
 void SendingTimerInit(uint32_t dataSendingPeriod,
-                      uint32_t sonarSamplingPeriod,
-                      uint32_t mpuSamplingPeriod);
+                      uint32_t sonarSamplingPeriod);
 
 void initTim1GPIO();
 void initTim3GPIO();

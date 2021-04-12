@@ -107,3 +107,9 @@ void
 ControlledMotor::resetPosition() {
     pEncoder->reset();
 }
+
+
+void
+ControlledMotor::setEncoderCountsPerMeter(double _encoderCountsPerMeter) {
+    encoderCountsPerMeter = _encoderCountsPerMeter;
+}

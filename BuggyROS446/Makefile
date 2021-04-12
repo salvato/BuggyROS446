@@ -73,8 +73,6 @@ Core/Src/controlledmotor.cpp \
 Core/Src/ADXL345.cpp \
 Core/Src/HMC5883L.cpp \
 Core/Src/ITG3200.cpp \
-Core/Src/MadgwickAHRS.cpp \
-Core/Src/mpu6050.cpp
 
 
 # ASM sources

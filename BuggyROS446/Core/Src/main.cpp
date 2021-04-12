@@ -141,9 +141,7 @@
 #include "controlledmotor.h"
 #include "ADXL345.h"
 #include "ITG3200.h"
-#include "mpu6050.h"
 #include "HMC5883L.h"
-#include "MadgwickAHRS.h"
 #include "string.h" // for memset()
 #include "stdio.h"
 // =================== ROS includes ===================
@@ -179,7 +177,6 @@ uint32_t IMU_CHANNEL =          TIM_CHANNEL_4;
 #define MPU_UPDATE_CHANNEL      HAL_TIM_ACTIVE_CHANNEL_3
 uint32_t SENDING_CHANNEL =      TIM_CHANNEL_1;
 uint32_t SONAR_CHANNEL =        TIM_CHANNEL_2;
-uint32_t MPU_CHANNEL =          TIM_CHANNEL_3;
 
 // Timers IRQ Numbers
 #define SAMPLING_IRQ            TIM2_IRQn
@@ -194,11 +191,11 @@ static void Loop();
 static void Init_Hardware();
 static bool IMU_Init();
 static void Init_ROS();
+static void getParameters();
 static void resetOdometry();
 static bool updateOdometry();
 static void calibrateIMU();
 static void updateIMU();
-static void updateMPU();
 static void calculateVariance(float* data, double* var, int nData);
 
 
@@ -233,9 +230,9 @@ DMA_HandleTypeDef  hdma_usart2_rx;
 ///==================
 /// Buggy Mechanics
 ///==================
-static const double L_WHEEL_DIAMETER = 0.067;  // [m]
-static const double R_WHEEL_DIAMETER = 0.067;  // [m]
-static const double TRACK_LENGTH     = 0.209;  // Tire's Distance [m]
+float l_wheel_diameter = 0.067;  // [m]
+float r_wheel_diameter = 0.067;  // [m]
+float track_length     = 0.209;  // Tire's Distance [m]
 #if defined(SLOW_MOTORS)
     static const int    ENCODER_COUNTS_PER_TIRE_TURN = 12*9*10*4; // Slow Motors !!!
 #else
@@ -258,8 +255,8 @@ double sonarPulseDelay        = 10.0e-6; // in seconds
 double sonarPulseWidth        = 10.0e-6; // in seconds
 double soundSpeed             = 340.0;   // in m/s
 
-double L_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*L_WHEEL_DIAMETER);
-double R_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*R_WHEEL_DIAMETER);
+double L_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*l_wheel_diameter);
+double R_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*r_wheel_diameter);
 
 
 ///====================
@@ -273,20 +270,18 @@ ControlledMotor* pLeftControlledMotor  = nullptr;
 ControlledMotor* pRightControlledMotor = nullptr;
 
 /// Inital values for PIDs (externally estimated)
-const double LeftP  = 0.101;
-const double LeftI  = 0.008;
-const double LeftD  = 0.003;
-const double RightP = 0.101;
-const double RightI = 0.008;
-const double RightD = 0.003;
+float LeftP  = 0.101;
+float LeftI  = 0.008;
+float LeftD  = 0.003;
+float RightP = 0.101;
+float RightI = 0.008;
+float RightD = 0.003;
 
-MPU6050 mpu6050;
-MPU6050::MPU6050_t mpuData;
 
 ADXL345  Acc;      /// 400KHz I2C Capable. Maximum Output Data Rate is 800 Hz
 ITG3200  Gyro;     /// 400KHz I2C Capable
 HMC5883L Magn;     /// 400KHz I2C Capable, left at the default 15Hz data Rate
-Madgwick Madgwick; /// ~13us per Madgwick.update() with NUCLEO-F411RE
+
 float qw,  qx,  qy,  qz;
 float MagValues[3]   = {0.0};
 float AccelValues[3] = {0.0};
@@ -304,15 +299,13 @@ uint32_t motorSamplingPulses     = uint32_t(periodicClockFrequency/motorSampling
 uint32_t odometryUpdateFrequency = 15;  // [Hz]
 uint32_t odometrySamplingPulses  = uint32_t(periodicClockFrequency/odometryUpdateFrequency+0.5); // [Hz]
 
-uint32_t dataSendingFrequency    = 4*15;// [Hz]
+uint32_t dataSendingFrequency    = 3*15;// [Hz]
 uint32_t dataSendingPulses       = uint32_t(sendingClockFrequency/dataSendingFrequency +0.5); // [Hz]
 uint32_t sonarSamplingFrequency  = 15;  // [Hz] (Max 40Hz)
 uint32_t sonarSamplingPulses     = uint32_t(sendingClockFrequency/sonarSamplingFrequency+0.5);
-uint32_t mpuSamplingFrequency    = 400;  // [Hz]
-uint32_t mpuSamplingPulses       = uint32_t(sendingClockFrequency/mpuSamplingFrequency+0.5);
+
 
 bool isIMUpresent     = false;
-bool isMPU6050present = false;
 
 bool isTimeToUpdateOdometry = false;
 volatile bool bSendNewData  = false;
@@ -336,7 +329,6 @@ ros::Time last_cmd_vel_time;
 // Published Data <========================
 nav_msgs::Odometry odom;
 sensor_msgs::Imu imuData;
-sensor_msgs::Imu imu2Data;
 sensor_msgs::MagneticField compassData;
 sensor_msgs::Range obstacleDistance;
 
@@ -344,7 +336,6 @@ sensor_msgs::Range obstacleDistance;
 ros::Publisher odom_pub("odom", &odom);
 ros::Publisher imu_pub("imu_data", &imuData);
 ros::Publisher mag_pub("mag_data", &compassData);
-ros::Publisher imu2_pub("imu2_data", &imu2Data);
 ros::Publisher obstacleDistance_pub("obstacle_distance", &obstacleDistance);
 
 // Subscribers <===========================
@@ -391,7 +382,7 @@ Loop() {
         nh.spinOnce();
         HAL_Delay(10);
     }
-
+    getParameters();
     /// Now Serial Node is Up and Ready
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
     resetOdometry();
@@ -415,7 +406,6 @@ Loop() {
     HAL_NVIC_EnableIRQ(SENDING_IRQ);
     HAL_TIM_OC_Start_IT(&hSendingTimer, SENDING_CHANNEL);
     HAL_TIM_OC_Start_IT(&hSendingTimer, SONAR_CHANNEL);
-    HAL_TIM_OC_Start_IT(&hSendingTimer, MPU_CHANNEL);
 
     while(nh.connected()) {
         if(bSendNewData) {
@@ -432,7 +422,8 @@ Loop() {
                     HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
                 }
             }
-            else if(nn == 3) {
+            else {// if(nn == 3) {
+                nn = 0;
                 if(isIMUpresent) {
                     mag_pub.publish(&compassData);
                 }
@@ -442,12 +433,6 @@ Loop() {
                 obstacleDistance_pub.publish(&obstacleDistance);
             }
 #endif
-            else {
-                nn = 0;
-                if(isMPU6050present) {
-                    imu2_pub.publish(&imu2Data);
-                }
-            }
             HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
             HAL_NVIC_EnableIRQ(SENDING_IRQ);
             /// If No New Speed Data have been Received in the Right Time
@@ -472,7 +457,6 @@ Loop() {
     // Stop Sending Out New Data:
     HAL_TIM_OC_Stop_IT(&hSendingTimer, SENDING_CHANNEL);
     HAL_TIM_OC_Stop_IT(&hSendingTimer, SONAR_CHANNEL);
-    HAL_TIM_OC_Stop_IT(&hSendingTimer, MPU_CHANNEL);
     HAL_NVIC_DisableIRQ(SENDING_IRQ);
 
     // Stop the Periodic Sampling:
@@ -486,9 +470,44 @@ Loop() {
 ///=======================================================================
 
 
-//=========================
-// Calculate the odometry
-//=========================
+//====================================================
+/// Get the parameter values from the Parameter server
+//====================================================
+void
+getParameters() {
+    if(!nh.getParam("left_p", &LeftP, 1, 1000))
+        LeftP = 0.101;
+    if(!nh.getParam("left_i", &LeftI, 1, 1000))
+        LeftP = 0.008;
+    if(!nh.getParam("left_d", &LeftD, 1, 1000))
+        LeftP = 0.003;
+    if(!nh.getParam("right_p", &RightP, 1, 1000))
+        RightP = 0.101;
+    if(!nh.getParam("right_i", &RightI, 1, 1000))
+        RightI = 0.008;
+    if(!nh.getParam("right_d", &RightD, 1, 1000))
+        RightD = 0.003;
+    pLeftControlledMotor->setPID(double(LeftP), double(LeftI), double(LeftD));
+    pRightControlledMotor->setPID(double(RightP), double(RightI), double(RightD));
+    nh.loginfo("Buggy: new PID Values Set");
+
+    if(!nh.getParam("left_tire_radius", &l_wheel_diameter, 1, 1000))
+        l_wheel_diameter = 0.067;
+    if(!nh.getParam("right_tire_radius", &r_wheel_diameter, 1, 1000))
+        r_wheel_diameter = 0.067;
+    if(!nh.getParam("track_length", &track_length, 1, 1000))
+        track_length = 0.209;
+    L_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*l_wheel_diameter);
+    R_encoderCountsPerMeter  = ENCODER_COUNTS_PER_TIRE_TURN/(M_PI*r_wheel_diameter);
+    pLeftControlledMotor->setEncoderCountsPerMeter(L_encoderCountsPerMeter);
+    pRightControlledMotor->setEncoderCountsPerMeter(R_encoderCountsPerMeter);
+    nh.loginfo("Buggy: new Mechanical Parameters Set");
+}
+
+
+//==========================
+/// Calculate the odometry
+//==========================
 bool
 updateOdometry() {
     /// Sampled Interval
@@ -498,7 +517,7 @@ updateOdometry() {
     double wheel_l = pLeftControlledMotor->spaceTraveled();
     double wheel_r = pRightControlledMotor->spaceTraveled();
     /// Robot's Axis Rotation in the Sampling Interval
-    double delta_theta = (wheel_r-wheel_l)/TRACK_LENGTH;
+    double delta_theta = (wheel_r-wheel_l)/track_length;
     /// Compute Updated Odometric Pose (approximated via Runge Kutta 2nd Order Integration)
     double delta_s = 0.5*(wheel_r+wheel_l);
     odom_pose[0] += delta_s * cos(odom_pose[2]+(0.5*delta_theta));
@@ -525,7 +544,7 @@ resetOdometry() {
     pLeftControlledMotor->resetPosition();
     pRightControlledMotor->resetPosition();
     odom_pose[0] = odom_pose[1] = odom_pose[2] = 0.0;
-
+    nh.loginfo("Buggy wheels Odometry has been Reset...");
 }
 
 
@@ -575,7 +594,6 @@ Init_Hardware() {
     /// Initialize IMU's (if presents)
     I2C2_Init();
     isIMUpresent     = IMU_Init();// Initialize 10DOF Sensor
-    isMPU6050present = mpu6050.Init(&hi2c2);
 
 #if defined (USE_SONAR)
     // Initialize Sonar
@@ -586,7 +604,7 @@ Init_Hardware() {
     // Initialize Periodic Sampling Timer #1 (TIM2)
     SamplingTimerInit(IMUSamplingPulses, motorSamplingPulses, odometrySamplingPulses);
     // Initialize Periodic Sampling & Sending Timer #2 (TIM8)
-    SendingTimerInit(dataSendingPulses, sonarSamplingPulses, mpuSamplingPulses);
+    SendingTimerInit(dataSendingPulses, sonarSamplingPulses);
 
     // Enable Push Button Interrupt
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
@@ -639,23 +657,6 @@ IMU_Init() {
     if(Magn.SetMeasurementMode(Measurement_Continuous) != 0)
         return false;
 
-    Madgwick.begin(float(IMUSamplingFrequency));
-
-    /// Since we Assume that the Buggy is stationary...
-    GyroValues[0] = GyroValues[1] = GyroValues[2] = 0.0;
-    //while(!Gyro.isRawDataReadyOn()) {}
-    //Gyro.readGyro(GyroValues);
-    while(!Acc.getInterruptSource(7)) {}
-    Acc.get_Gxyz(AccelValues);
-    while(!Magn.isDataReady()) {}
-    Magn.ReadScaledAxis(MagValues);
-
-    /// Since we start in an arbitrary orientation we have to converge to
-    /// the initial estimate of the attitude (Assuming a Static Sensor !)
-    for(int i=0; i<20000; i++) { // ~13us per Madgwick.update() with NUCLEO-F411RE
-        Madgwick.update(GyroValues, AccelValues, MagValues);
-    }
-
     return true;
 }
 
@@ -680,11 +681,7 @@ Init_ROS() {
     odom.child_frame_id = {"base_link"};
 
     imuData.header.frame_id  = {"imu_link"};
-
     compassData.header.frame_id = {"imu_link"};
-
-    imu2Data.header.frame_id = {"imu_link"};
-    imu2Data.orientation.w = 1.0;
 
     nh.initNode();
 
@@ -702,8 +699,6 @@ Init_ROS() {
     if(!nh.advertise(odom_pub))
         Error_Handler();
     if(!nh.advertise(imu_pub))
-        Error_Handler();
-    if(!nh.advertise(imu2_pub))
         Error_Handler();
     if(!nh.advertise(mag_pub))
         Error_Handler();
@@ -754,7 +749,7 @@ calibrateIMU_cb(const std_msgs::UInt8& msg) {
 // The received AngularTarget speed is in rad/s
 static void
 targetSpeed_cb(const geometry_msgs::Twist& speed) {
-    double angSpeed  = speed.angular.z*TRACK_LENGTH*0.5; // Vt = Omega * R
+    double angSpeed  = speed.angular.z*track_length*0.5; // Vt = Omega * R
     leftTargetSpeed  = speed.linear.x - angSpeed;        // in m/s
     rightTargetSpeed = speed.linear.x + angSpeed;        // in m/s
     last_cmd_vel_time = nh.now();
@@ -833,11 +828,6 @@ calibrateIMU() {
         Acc.get_Gxyz(AccelValues);
         while(!Magn.isDataReady()) {}
         Magn.ReadScaledAxis(MagValues);
-        Madgwick.update(GyroValues, AccelValues, MagValues);
-        j = 3 * i;
-        data[j]   = Madgwick.getRollRadians();
-        data[j+1] = Madgwick.getPitchRadians();
-        data[j+2] = Madgwick.getYawRadians();
         nh.spinOnce();
     }
     calculateVariance(data, variance, nData);
@@ -849,11 +839,10 @@ calibrateIMU() {
     imuData.orientation_covariance[8] = variance[2];
     nh.loginfo("imuData.orientation_covariance Calculated...");
 
-    Madgwick.getRotation(&qw, &qx, &qy, &qz);
-    imuData.orientation.x = qx;
-    imuData.orientation.y = qy;
-    imuData.orientation.z = qz;
-    imuData.orientation.w = qw;
+    imuData.orientation.x = 0.0;
+    imuData.orientation.y = 0.0;
+    imuData.orientation.z = 0.0;
+    imuData.orientation.w = 1.0;
 
     /// Magnetometers
     for(int i=0; i<nData; i++) {
@@ -881,12 +870,10 @@ updateIMU() {
     Acc.get_Gxyz(AccelValues);
     Gyro.readGyro(GyroValues);
     Magn.ReadScaledAxis(MagValues);
-    Madgwick.update(GyroValues, AccelValues, MagValues); // ~13us
-    Madgwick.getRotation(&qw, &qx, &qy, &qz);
-    imuData.orientation.w = qw;
-    imuData.orientation.x = qy;
-    imuData.orientation.y = qx;
-    imuData.orientation.z = qz;
+    imuData.orientation.w = 1.0;
+    imuData.orientation.x = 0.0;
+    imuData.orientation.y = 0.0;
+    imuData.orientation.z = 0.0;
     compassData.header.stamp = nh.now();
     compassData.magnetic_field.x = MagValues[0];
     compassData.magnetic_field.y = MagValues[1];
@@ -900,18 +887,6 @@ updateIMU() {
     imuData.angular_velocity.y = DEG2RAD(GyroValues[1]);
     imuData.angular_velocity.z = DEG2RAD(GyroValues[2]);
     imuData.header.stamp = nh.now();
-}
-
-
-void
-updateMPU() {
-    mpu6050.Read_All(&hi2c2, &mpuData);
-    imu2Data.linear_acceleration.x = mpuData.Ax*9.80665;
-    imu2Data.linear_acceleration.y = mpuData.Ay*9.80665;
-    imu2Data.linear_acceleration.z = mpuData.Az*9.80665;
-    imu2Data.angular_velocity.x    = mpuData.Gx/180.0*M_PI;
-    imu2Data.angular_velocity.y    = mpuData.Gy/180.0*M_PI;
-    imu2Data.angular_velocity.z    = mpuData.Gz/180.0*M_PI;
 }
 
 
@@ -973,13 +948,6 @@ HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
             LL_TIM_IC_SetPolarity(TIM5, LL_TIM_CHANNEL_CH2, LL_TIM_IC_POLARITY_RISING);
             LL_TIM_EnableCounter(hSonarPulseTimer.Instance);
 #endif
-        }
-        else if(htim->Channel == MPU_UPDATE_CHANNEL) { // Time to Update IMU Data ? (400Hz)
-//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-            htim->Instance->CCR3 += mpuSamplingPulses;
-            if(isMPU6050present) {
-                updateMPU();
-            }
         }
         else
             Error_Handler();
