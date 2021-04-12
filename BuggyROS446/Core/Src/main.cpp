@@ -544,7 +544,7 @@ resetOdometry() {
     pLeftControlledMotor->resetPosition();
     pRightControlledMotor->resetPosition();
     odom_pose[0] = odom_pose[1] = odom_pose[2] = 0.0;
-    nh.loginfo("Buggy wheels Odometry has been Reset...");
+    nh.loginfo("Buggy wheels Odometry has been giReset...");
 }
 
 
