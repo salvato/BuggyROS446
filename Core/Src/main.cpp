@@ -318,6 +318,7 @@ volatile uint16_t uhCaptureIndex = 0;
 
 double leftTargetSpeed  = 0.0;
 double rightTargetSpeed = 0.0;
+double maxTimeBetweenSpeedCommands = 1.0; // in seconds
 
 
 ///=============
@@ -439,9 +440,9 @@ Loop() {
 #endif
             HAL_NVIC_EnableIRQ(SAMPLING_IRQ);
             HAL_NVIC_EnableIRQ(SENDING_IRQ);
-            /// If No New Speed Data have been Received in the Right Time
-            /// Halt the Robot to avoid possible damages
-            if((nh.now()-last_cmd_vel_time).toSec() > 0.5) {
+            /// If No Speed Data have been Received in the Due Time...
+            /// Halt the Robot to avoid possible damages !
+            if((nh.now()-last_cmd_vel_time).toSec() > maxTimeBetweenSpeedCommands) {
                 leftTargetSpeed  = 0.0; // in m/s
                 rightTargetSpeed = 0.0; // in m/s
             }
