@@ -2,6 +2,7 @@
 *.d
 *.o
 *.creator.user.*
+*.creator.user
 *.ioc
 *.bin
 *.elf
