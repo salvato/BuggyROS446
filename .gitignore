@@ -1,0 +1,5 @@
+*.lst
+*.d
+*.o
+*.creator.user
+*.ioc
